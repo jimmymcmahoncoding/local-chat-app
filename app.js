@@ -31,7 +31,7 @@
 
   function renderMessages(snapshot) {
     messagesEl.innerHTML = '';
-    const docs = snapshot.docs.slice().reverse();
+    const docs = snapshot.docs;
     docs.forEach((doc) => {
       const data = doc.data();
       const wrapper = document.createElement('div');
@@ -144,7 +144,7 @@
 
     unsubscribeMessages = db
       .collection('messages')
-      .orderBy('createdAt', 'desc')
+      .orderBy('createdAt', 'asc')
       .limit(100)
       .onSnapshot(renderMessages);
   });
