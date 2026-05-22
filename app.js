@@ -9,8 +9,16 @@
 
   const auth = firebase.auth();
   const db = firebase.firestore();
-  const messaging = firebase.messaging();
   const provider = new firebase.auth.GoogleAuthProvider();
+  const pushSupported = 'serviceWorker' in navigator && 'Notification' in window;
+  let messaging = null;
+  if (pushSupported) {
+    try {
+      messaging = firebase.messaging();
+    } catch (error) {
+      messaging = null;
+    }
+  }
 
   const allowedEmails = new Set(
     (FAMILY_CHAT_CONFIG.allowedFamilyEmails || []).map((email) => email.toLowerCase().trim())
@@ -92,6 +100,10 @@
 
   enablePushBtn.addEventListener('click', async () => {
     try {
+      if (!messaging || !pushSupported) {
+        pushStatus.textContent = 'Push notifications are not supported in this browser.';
+        return;
+      }
       if (!FAMILY_CHAT_CONFIG.vapidPublicKey) {
         pushStatus.textContent = 'Set vapidPublicKey in firebase-config.js first.';
         return;
@@ -114,11 +126,13 @@
     }
   });
 
-  messaging.onMessage((payload) => {
-    const title = payload.notification?.title || 'Family Chat';
-    const body = payload.notification?.body || 'New message received';
-    pushStatus.textContent = `${title}: ${body}`;
-  });
+  if (messaging) {
+    messaging.onMessage((payload) => {
+      const title = payload.notification?.title || 'Family Chat';
+      const body = payload.notification?.body || 'New message received';
+      pushStatus.textContent = `${title}: ${body}`;
+    });
+  }
 
   auth.onAuthStateChanged((user) => {
     if (unsubscribeMessages) {

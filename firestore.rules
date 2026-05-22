@@ -6,6 +6,7 @@ service cloud.firestore {
     }
 
     function isFamilyMember() {
+      // IMPORTANT: Replace this placeholder list before deploying to production.
       return signedIn() && request.auth.token.email in [
         'replace@example.com'
       ];
