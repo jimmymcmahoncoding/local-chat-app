@@ -17,6 +17,7 @@
       messaging = firebase.messaging();
     } catch (error) {
       messaging = null;
+      console.warn('Push initialization failed:', error);
     }
   }
 
@@ -75,11 +76,19 @@
   }
 
   signInBtn.addEventListener('click', async () => {
-    await auth.signInWithPopup(provider);
+    try {
+      await auth.signInWithPopup(provider);
+    } catch (error) {
+      authStatus.textContent = `Sign-in failed: ${error.message}`;
+    }
   });
 
   signOutBtn.addEventListener('click', async () => {
-    await auth.signOut();
+    try {
+      await auth.signOut();
+    } catch (error) {
+      authStatus.textContent = `Sign-out failed: ${error.message}`;
+    }
   });
 
   form.addEventListener('submit', async (event) => {
@@ -89,13 +98,17 @@
     if (!text || !user || !isAllowedEmail(user)) {
       return;
     }
-    await db.collection('messages').add({
-      text,
-      uid: user.uid,
-      displayName: user.displayName || user.email || 'Family',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    input.value = '';
+    try {
+      await db.collection('messages').add({
+        text,
+        uid: user.uid,
+        displayName: user.displayName || user.email || 'Family',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      input.value = '';
+    } catch (error) {
+      pushStatus.textContent = `Message failed: ${error.message}`;
+    }
   });
 
   enablePushBtn.addEventListener('click', async () => {
