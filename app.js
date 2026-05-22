@@ -96,7 +96,7 @@
         pushStatus.textContent = 'Set vapidPublicKey in firebase-config.js first.';
         return;
       }
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         pushStatus.textContent = 'Notification permission not granted.';
