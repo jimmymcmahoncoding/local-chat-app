@@ -33,6 +33,7 @@
   const enablePushBtn = document.getElementById('enable-push-btn');
   const pushStatus = document.getElementById('push-status');
   const messagesEl = document.getElementById('messages');
+  const messageStatus = document.getElementById('message-status');
   const form = document.getElementById('message-form');
   const input = document.getElementById('message-input');
 
@@ -106,8 +107,9 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       input.value = '';
+      messageStatus.textContent = '';
     } catch (error) {
-      pushStatus.textContent = `Message failed: ${error.message}`;
+      messageStatus.textContent = `Message failed: ${error.message}`;
     }
   });
 
