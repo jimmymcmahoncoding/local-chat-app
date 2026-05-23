@@ -17,11 +17,12 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isFamilyMember();
       allow create: if isFamilyMember()
-        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl'])
+        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'avatar'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
         && request.resource.data.createdAt == request.time
+        && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
         && (
           // Regular text message
           (
@@ -40,6 +41,18 @@ service cloud.firestore {
           )
         );
       allow update, delete: if false;
+    }
+
+    match /userProfiles/{userId} {
+      allow read: if isFamilyMember();
+      allow write: if isFamilyMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['avatar', 'displayName'])
+        && request.resource.data.avatar is string
+        && request.resource.data.avatar.size() <= 10
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 30;
     }
   }
 }

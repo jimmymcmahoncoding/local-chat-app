@@ -23,8 +23,14 @@
   const pushSection = document.getElementById('push-section');
   const signinScreen = document.getElementById('signin-screen');
   const userNameEl = document.getElementById('user-name');
-  const enablePushBtn = document.getElementById('enable-push-btn');
   const pushStatus = document.getElementById('push-status');
+  const profileBtn = document.getElementById('profile-btn');
+  const userAvatarEl = document.getElementById('user-avatar');
+  const profileModal = document.getElementById('profile-modal');
+  const avatarPreviewEl = document.getElementById('avatar-preview');
+  const avatarGridEl = document.getElementById('avatar-grid');
+  const profileNameInput = document.getElementById('profile-name-input');
+  const gifLoadMore = document.getElementById('gif-load-more');
   const messagesEl = document.getElementById('messages');
   const messageStatus = document.getElementById('message-status');
   const form = document.getElementById('message-form');
@@ -39,8 +45,16 @@
   let unsubscribeMessages = null;
   let swRegistration = null;
   let sessionStart = null;
+  let currentProfile = { avatar: '😀', displayName: '' };
+  let profileSelectedAvatar = '😀';
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
+  const AVATAR_OPTIONS = [
+    '😀', '😎', '🤓', '😜', '🥳',
+    '🐱', '🐶', '🦊', '🐻', '🐼',
+    '🦋', '🌸', '🌈', '⭐', '🎮',
+    '⚽', '🎸', '🍕', '🚀', '🦄',
+  ];
 
   function getInitials(name) {
     return String(name || 'F')
@@ -89,10 +103,12 @@
             <div class="msg__time">${escapeHtml(time)}</div>
           </div>`;
       } else {
-        const initials = escapeHtml(getInitials(displayName));
-        const avatarColor = getAvatarColor(displayName);
+        const hasEmojiAvatar = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
+        const avatarHtml = hasEmojiAvatar
+          ? `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(data.avatar)}</div>`
+          : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}" aria-hidden="true">${escapeHtml(getInitials(displayName))}</div>`;
         wrapper.innerHTML = `
-          <div class="msg__avatar" style="background:${avatarColor}" aria-hidden="true">${initials}</div>
+          ${avatarHtml}
           <div class="msg__content">
             <div class="msg__name">${escapeHtml(displayName)}</div>
             <div class="msg__bubble">
@@ -132,8 +148,6 @@
     signOutBtn.classList.toggle('hidden', !enabled);
     if (!enabled) {
       pushSection.classList.add('hidden');
-      enablePushBtn.classList.remove('btn-icon--active');
-      enablePushBtn.disabled = false;
       closeAllPickers();
     }
   }
@@ -171,16 +185,13 @@
 
   function updatePushButtonState() {
     if (!notificationsSupported) {
-      enablePushBtn.disabled = true;
-      pushStatus.textContent = 'Notifications not supported in this browser.';
+      pushStatus.textContent = 'Notifications are not supported in this browser.';
       pushSection.classList.remove('hidden');
       return;
     }
     if (Notification.permission === 'granted') {
-      enablePushBtn.classList.add('btn-icon--active');
       pushSection.classList.add('hidden');
     } else if (Notification.permission === 'denied') {
-      enablePushBtn.disabled = true;
       pushStatus.textContent = 'Notifications blocked. Enable them in your browser or OS settings.';
       pushSection.classList.remove('hidden');
     }
@@ -216,6 +227,9 @@
 
   signInBtn.addEventListener('click', async () => {
     try {
+      if (notificationsSupported && Notification.permission === 'default') {
+        await Notification.requestPermission().catch(() => { });
+      }
       await auth.signInWithPopup(provider);
     } catch (error) {
       authStatus.textContent = `Sign-in failed: ${error.message}`;
@@ -241,7 +255,8 @@
       await db.collection('messages').add({
         text,
         uid: user.uid,
-        displayName: user.displayName || user.email || 'Family',
+        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+        avatar: currentProfile.avatar,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       input.value = '';
@@ -251,25 +266,85 @@
     }
   });
 
-  enablePushBtn.addEventListener('click', async () => {
+  // ── Profile management ──────────────────────────────────
+  async function loadProfile(uid) {
     try {
-      if (!notificationsSupported) {
-        pushStatus.textContent = 'Notifications are not supported in this browser.';
-        return;
+      const snap = await db.collection('userProfiles').doc(uid).get();
+      if (snap.exists) {
+        const data = snap.data();
+        currentProfile.avatar = AVATAR_OPTIONS.includes(data.avatar) ? data.avatar : '😀';
+        currentProfile.displayName = String(data.displayName || '').slice(0, 30);
+      } else {
+        const user = auth.currentUser;
+        currentProfile.avatar = '😀';
+        currentProfile.displayName = user?.displayName || user?.email || '';
       }
-
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        updatePushButtonState();
-        return;
-      }
-
-      await registerNotificationSW();
-      updatePushButtonState();
-    } catch (error) {
-      pushStatus.textContent = `Failed to enable push: ${error.message}`;
+      syncProfileUI();
+    } catch (err) {
+      console.warn('Failed to load profile:', err);
     }
+  }
+
+  function syncProfileUI() {
+    if (userAvatarEl) userAvatarEl.textContent = currentProfile.avatar;
+    if (userNameEl) userNameEl.textContent = currentProfile.displayName;
+  }
+
+  function openProfileModal() {
+    profileSelectedAvatar = currentProfile.avatar;
+    avatarPreviewEl.textContent = currentProfile.avatar;
+    profileNameInput.value = currentProfile.displayName;
+    avatarGridEl.querySelectorAll('.avatar-option').forEach((btn) => {
+      btn.classList.toggle('avatar-option--selected', btn.dataset.emoji === currentProfile.avatar);
+    });
+    profileModal.classList.remove('hidden');
+  }
+
+  function closeProfileModal() {
+    profileModal.classList.add('hidden');
+  }
+
+  async function saveProfile() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const name = profileNameInput.value.trim();
+    if (!name) { profileNameInput.focus(); return; }
+    try {
+      await db.collection('userProfiles').doc(user.uid).set({
+        avatar: profileSelectedAvatar,
+        displayName: name,
+      });
+      currentProfile.avatar = profileSelectedAvatar;
+      currentProfile.displayName = name;
+      syncProfileUI();
+      closeProfileModal();
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+    }
+  }
+
+  AVATAR_OPTIONS.forEach((emoji) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'avatar-option';
+    btn.dataset.emoji = emoji;
+    btn.textContent = emoji;
+    btn.addEventListener('click', () => {
+      profileSelectedAvatar = emoji;
+      avatarPreviewEl.textContent = emoji;
+      avatarGridEl.querySelectorAll('.avatar-option').forEach((b) => {
+        b.classList.toggle('avatar-option--selected', b.dataset.emoji === emoji);
+      });
+    });
+    avatarGridEl.appendChild(btn);
   });
+
+  profileBtn.addEventListener('click', openProfileModal);
+  profileModal.addEventListener('click', (e) => {
+    if (e.target === profileModal) closeProfileModal();
+  });
+  document.getElementById('profile-cancel-btn').addEventListener('click', closeProfileModal);
+  document.getElementById('profile-save-btn').addEventListener('click', saveProfile);
 
   function closeAllPickers() {
     emojiPanel.classList.add('hidden');
@@ -307,6 +382,7 @@
       gifHasMore = offset + gifs.length < (pagination.total_count || 0);
       gifOffset = offset + gifs.length;
       renderGifResults(gifs, offset > 0);
+      gifLoadMore.classList.toggle('hidden', !gifHasMore);
     } catch {
       if (offset === 0) {
         gifResults.innerHTML = '<p class="gif-results__placeholder">Failed to load GIFs.</p>';
@@ -350,7 +426,8 @@
         gifUrl,
         text: '[GIF]',
         uid: user.uid,
-        displayName: user.displayName || user.email || 'Family',
+        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+        avatar: currentProfile.avatar,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       messageStatus.textContent = '';
@@ -387,6 +464,10 @@
     }
   });
 
+  gifLoadMore.querySelector('button').addEventListener('click', () => {
+    if (gifHasMore && !gifFetching) fetchGifs(gifCurrentQuery, gifOffset);
+  });
+
   emojiPanel.querySelector('emoji-picker')?.addEventListener('emoji-click', (event) => {
     const emoji = event.detail.unicode;
     const start = input.selectionStart ?? input.value.length;
@@ -416,14 +497,14 @@
       return;
     }
 
-    authStatus.textContent = `Signed in as ${user.displayName || user.email}`;
-    if (userNameEl) userNameEl.textContent = user.displayName || user.email || '';
+    authStatus.textContent = '';
     sessionStart = new Date();
     showChat(true);
     updatePushButtonState();
     if (Notification.permission === 'granted') {
       registerNotificationSW();
     }
+    loadProfile(user.uid);
 
     unsubscribeMessages = db
       .collection('messages')
