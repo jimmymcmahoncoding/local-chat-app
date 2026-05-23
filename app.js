@@ -21,6 +21,8 @@
   const authStatus = document.getElementById('auth-status');
   const chatSection = document.getElementById('chat-section');
   const pushSection = document.getElementById('push-section');
+  const signinScreen = document.getElementById('signin-screen');
+  const userNameEl = document.getElementById('user-name');
   const enablePushBtn = document.getElementById('enable-push-btn');
   const pushStatus = document.getElementById('push-status');
   const messagesEl = document.getElementById('messages');
@@ -32,19 +34,66 @@
   let swRegistration = null;
   let sessionStart = null;
 
-  function renderMessages(snapshot) {
+  const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
+
+  function getInitials(name) {
+    return String(name || 'F')
+      .split(' ')
+      .map((w) => w[0] || '')
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }
+
+  function getAvatarColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  }
+
+  function renderMessages(snapshot, currentUser) {
     messagesEl.innerHTML = '';
     const docs = snapshot.docs;
+
+    if (docs.length === 0) {
+      messagesEl.innerHTML = '<p class="messages-empty">No messages yet. Say hello! 👋</p>';
+      return;
+    }
+
     docs.forEach((doc) => {
       const data = doc.data();
+      const isOwn = currentUser && data.uid === currentUser.uid;
+      const displayName = data.displayName || 'Family';
+      const time = data.createdAt?.toDate
+        ? data.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+
       const wrapper = document.createElement('div');
-      wrapper.className = 'msg';
-      const date = data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : '';
-      wrapper.innerHTML = `<div><strong>${escapeHtml(data.displayName || 'Family')}</strong>: ${escapeHtml(
-        data.text || ''
-      )}</div><div class="meta">${escapeHtml(date)}</div>`;
+      wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
+
+      if (isOwn) {
+        wrapper.innerHTML = `
+          <div class="msg__bubble">
+            <div class="msg__text">${escapeHtml(data.text || '')}</div>
+            <div class="msg__time">${escapeHtml(time)}</div>
+          </div>`;
+      } else {
+        const initials = escapeHtml(getInitials(displayName));
+        const avatarColor = getAvatarColor(displayName);
+        wrapper.innerHTML = `
+          <div class="msg__avatar" style="background:${avatarColor}" aria-hidden="true">${initials}</div>
+          <div class="msg__content">
+            <div class="msg__name">${escapeHtml(displayName)}</div>
+            <div class="msg__bubble">
+              <div class="msg__text">${escapeHtml(data.text || '')}</div>
+              <div class="msg__time">${escapeHtml(time)}</div>
+            </div>
+          </div>`;
+      }
+
       messagesEl.appendChild(wrapper);
     });
+
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
@@ -59,9 +108,13 @@
 
   function showChat(enabled) {
     chatSection.classList.toggle('hidden', !enabled);
-    pushSection.classList.toggle('hidden', !enabled);
-    signInBtn.classList.toggle('hidden', enabled);
+    signinScreen.classList.toggle('hidden', enabled);
     signOutBtn.classList.toggle('hidden', !enabled);
+    if (!enabled) {
+      pushSection.classList.add('hidden');
+      enablePushBtn.classList.remove('btn-icon--active');
+      enablePushBtn.disabled = false;
+    }
   }
 
   function isAllowedEmail(user) {
@@ -99,14 +152,16 @@
     if (!notificationsSupported) {
       enablePushBtn.disabled = true;
       pushStatus.textContent = 'Notifications not supported in this browser.';
+      pushSection.classList.remove('hidden');
       return;
     }
     if (Notification.permission === 'granted') {
-      pushStatus.textContent =
-        'Notifications enabled. You will receive alerts for new family messages while this app is open.';
+      enablePushBtn.classList.add('btn-icon--active');
+      pushSection.classList.add('hidden');
     } else if (Notification.permission === 'denied') {
       enablePushBtn.disabled = true;
       pushStatus.textContent = 'Notifications blocked. Enable them in your browser or OS settings.';
+      pushSection.classList.remove('hidden');
     }
   }
 
@@ -202,7 +257,7 @@
     }
 
     if (!user) {
-      authStatus.textContent = 'Not signed in';
+      authStatus.textContent = '';
       sessionStart = null;
       showChat(false);
       return;
@@ -216,6 +271,7 @@
     }
 
     authStatus.textContent = `Signed in as ${user.displayName || user.email}`;
+    if (userNameEl) userNameEl.textContent = user.displayName || user.email || '';
     sessionStart = new Date();
     showChat(true);
     updatePushButtonState();
@@ -228,7 +284,7 @@
       .orderBy('createdAt', 'asc')
       .limit(100)
       .onSnapshot((snapshot) => {
-        renderMessages(snapshot);
+        renderMessages(snapshot, user);
         notifyForNewMessages(snapshot, user);
       });
   });
