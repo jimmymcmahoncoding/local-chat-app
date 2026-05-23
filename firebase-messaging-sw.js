@@ -3,7 +3,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 importScripts('./firebase-config.js');
 
-firebase.initializeApp(self.FAMILY_CHAT_CONFIG.firebaseConfig);
+firebase.initializeApp(globalThis.FAMILY_CHAT_CONFIG.firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {

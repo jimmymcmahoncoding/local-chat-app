@@ -133,9 +133,14 @@
         vapidKey: FAMILY_CHAT_CONFIG.vapidPublicKey,
         serviceWorkerRegistration: registration
       });
-      pushStatus.textContent = token
-        ? 'Push notifications enabled.'
-        : 'No push token returned. Check Firebase setup.';
+      if (!token) {
+        pushStatus.textContent = 'No push token returned. Check Firebase setup.';
+        return;
+      }
+
+      const shortToken = `${token.slice(0, 16)}...${token.slice(-8)}`;
+      console.log('FCM registration token:', token);
+      pushStatus.textContent = `Push notifications enabled. Token: ${shortToken} (full token in browser console).`;
     } catch (error) {
       pushStatus.textContent = `Failed to enable push: ${error.message}`;
     }
