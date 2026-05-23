@@ -1,30 +1,33 @@
 /* ── Reset & custom properties ──────────────────────────── */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 :root {
-  --primary:       #6366f1;
-  --primary-dark:  #4f46e5;
-  --own-bg:        #6366f1;
-  --own-text:      #ffffff;
-  --other-bg:      #ffffff;
-  --other-text:    #111827;
-  --page-bg:       #f1f5f9;
-  --header-bg:     #ffffff;
-  --composer-bg:   #ffffff;
-  --border:        #e2e8f0;
-  --muted:         #64748b;
-  --error:         #ef4444;
-  --warn-bg:       #fffbeb;
-  --warn-border:   #fde68a;
-  --warn-text:     #92400e;
-  --bubble-r:      18px;
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --own-bg: #6366f1;
+  --own-text: #ffffff;
+  --other-bg: #ffffff;
+  --other-text: #111827;
+  --page-bg: #f1f5f9;
+  --header-bg: #ffffff;
+  --composer-bg: #ffffff;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --error: #ef4444;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
+  --warn-text: #92400e;
+  --bubble-r: 18px;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
@@ -149,7 +152,7 @@ body {
   flex-shrink: 0;
 }
 
-.chat-header__brand > span:first-child {
+.chat-header__brand>span:first-child {
   font-size: 1.2rem;
 }
 
@@ -396,3 +399,135 @@ body {
   margin-top: 0.25rem;
 }
 
+/* ── Composer icon buttons (emoji + GIF) ────────────────── */
+.btn-composer-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  transition: background 0.15s;
+  color: var(--muted);
+  padding: 0;
+}
+
+.btn-composer-icon:hover {
+  background: var(--page-bg);
+}
+
+.btn-composer-gif {
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: 0.04em;
+  border: 1.5px solid var(--border);
+  width: auto;
+  padding: 0 6px;
+  height: 26px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-composer-gif:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── Picker panels ───────────────────────────────────────── */
+.picker-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--composer-bg);
+}
+
+emoji-picker {
+  width: 100%;
+  height: 300px;
+  --border-color: var(--border);
+  --background: var(--composer-bg);
+  --emoji-padding: 0.4rem;
+  border-radius: 0;
+  border: none;
+}
+
+/* ── GIF picker panel ────────────────────────────────────── */
+.gif-panel__header {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.gif-panel__header input {
+  width: 100%;
+  padding: 0.4rem 0.875rem;
+  border: 1.5px solid var(--border);
+  border-radius: 50px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  background: var(--page-bg);
+  transition: border-color 0.15s;
+}
+
+.gif-panel__header input:focus {
+  border-color: var(--primary);
+  background: #fff;
+}
+
+.gif-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-auto-rows: 100px;
+  gap: 4px;
+  overflow-y: auto;
+  height: 316px;
+  /* 3 rows × 100px + 2 gaps × 4px + 2 × 4px padding */
+  padding: 4px;
+  background: var(--page-bg);
+}
+
+.gif-results__placeholder {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+.gif-result {
+  overflow: hidden;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--border);
+}
+
+.gif-result img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: opacity 0.15s;
+}
+
+.gif-result:hover img {
+  opacity: 0.82;
+}
+
+/* ── GIF message image ───────────────────────────────────── */
+.msg__gif {
+  display: block;
+  max-width: 200px;
+  width: 100%;
+  border-radius: 12px;
+}

@@ -17,14 +17,28 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isFamilyMember();
       allow create: if isFamilyMember()
-        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt'])
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 500
+        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
-        && request.resource.data.createdAt == request.time;
+        && request.resource.data.createdAt == request.time
+        && (
+          // Regular text message
+          (
+            !('type' in request.resource.data)
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 500
+          )
+          ||
+          // GIF message
+          (
+            request.resource.data.type == 'gif'
+            && request.resource.data.gifUrl is string
+            && request.resource.data.gifUrl.size() > 0
+            && request.resource.data.text == '[GIF]'
+          )
+        );
       allow update, delete: if false;
     }
   }

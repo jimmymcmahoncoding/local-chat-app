@@ -8,5 +8,6 @@ globalThis.FAMILY_CHAT_CONFIG = {
     appId: 'REPLACE_ME'
   },
   allowedFamilyEmails: ['replace@example.com'],
-  vapidPublicKey: '' // Optional: required only for web push notifications
+  vapidPublicKey: '', // Optional: required only for web push notifications
+  giphyApiKey: '' // Get a free key at https://developers.giphy.com
 };
