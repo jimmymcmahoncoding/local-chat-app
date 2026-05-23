@@ -29,7 +29,8 @@
   const input = document.getElementById('message-input');
 
   let unsubscribeMessages = null;
-  let hasLoadedInitialMessages = false;
+  let swRegistration = null;
+  let sessionStart = null;
 
   function renderMessages(snapshot) {
     messagesEl.innerHTML = '';
@@ -68,43 +69,73 @@
     return Boolean(email && allowedEmails.has(email));
   }
 
-  function notifyForNewMessages(snapshot, signedInUser) {
-    if (Notification.permission !== 'granted') {
-      return;
-    }
+  function registerNotificationSW() {
+    if (!('serviceWorker' in navigator)) return Promise.resolve();
+    return navigator.serviceWorker
+      .register('./notification-sw.js')
+      .then((reg) => {
+        swRegistration = reg;
+      })
+      .catch((err) => {
+        console.warn('Notification service worker registration failed:', err);
+      });
+  }
 
-    const addedChanges = snapshot.docChanges().filter((change) => change.type === 'added');
-
-    // Do not notify for historical messages loaded on first subscription.
-    if (!hasLoadedInitialMessages) {
-      hasLoadedInitialMessages = true;
-      return;
-    }
-
-    addedChanges.forEach((change) => {
-      const message = change.doc.data();
-      if (!message) {
-        return;
-      }
-
-      const isSameUser = message.uid === signedInUser.uid;
-      const isActiveWindow = document.visibilityState === 'visible' && document.hasFocus();
-
-      // Avoid notifying for your own message in the active sender window,
-      // but allow it in other inactive windows/tabs of the same account.
-      if (isSameUser && isActiveWindow) {
-        return;
-      }
-
-      const sender = message.displayName || 'Family';
-      const body = String(message.text || '').trim() || 'New message received';
-
+  function showNotification(title, body) {
+    if (swRegistration) {
+      swRegistration.showNotification(title, { body }).catch((err) => {
+        console.error('SW notification failed:', err);
+      });
+    } else {
       try {
-        new Notification(`${sender} sent a message`, { body });
-      } catch (error) {
-        console.error('Notification failed:', error);
+        new Notification(title, { body });
+      } catch (err) {
+        console.error('Notification failed:', err);
       }
-    });
+    }
+  }
+
+  function updatePushButtonState() {
+    if (!notificationsSupported) {
+      enablePushBtn.disabled = true;
+      pushStatus.textContent = 'Notifications not supported in this browser.';
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      pushStatus.textContent =
+        'Notifications enabled. You will receive alerts for new family messages while this app is open.';
+    } else if (Notification.permission === 'denied') {
+      enablePushBtn.disabled = true;
+      pushStatus.textContent = 'Notifications blocked. Enable them in your browser or OS settings.';
+    }
+  }
+
+  function notifyForNewMessages(snapshot, signedInUser) {
+    if (Notification.permission !== 'granted') return;
+    if (!sessionStart) return;
+
+    snapshot
+      .docChanges()
+      .filter((change) => change.type === 'added')
+      .forEach((change) => {
+        const message = change.doc.data();
+        if (!message) return;
+
+        // Skip messages without a confirmed server timestamp (own pending writes).
+        const msgTime = message.createdAt?.toDate ? message.createdAt.toDate() : null;
+        if (!msgTime) return;
+
+        // Skip messages that predate this session (historical load on subscribe).
+        if (msgTime <= sessionStart) return;
+
+        // Skip own messages only when this window is the active sender window.
+        const isActiveWindow = document.visibilityState === 'visible' && document.hasFocus();
+        if (message.uid === signedInUser.uid && isActiveWindow) return;
+
+        const sender = message.displayName || 'Family';
+        const body = String(message.text || '').trim() || 'New message received';
+        showNotification(`${sender} sent a message`, body);
+      });
   }
 
   signInBtn.addEventListener('click', async () => {
@@ -153,12 +184,12 @@
 
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        pushStatus.textContent = 'Notification permission not granted.';
+        updatePushButtonState();
         return;
       }
 
-      pushStatus.textContent =
-        'Notifications enabled. You will receive alerts for new family messages while this app is open.';
+      await registerNotificationSW();
+      updatePushButtonState();
     } catch (error) {
       pushStatus.textContent = `Failed to enable push: ${error.message}`;
     }
@@ -172,7 +203,7 @@
 
     if (!user) {
       authStatus.textContent = 'Not signed in';
-      hasLoadedInitialMessages = false;
+      sessionStart = null;
       showChat(false);
       return;
     }
@@ -185,7 +216,12 @@
     }
 
     authStatus.textContent = `Signed in as ${user.displayName || user.email}`;
+    sessionStart = new Date();
     showChat(true);
+    updatePushButtonState();
+    if (Notification.permission === 'granted') {
+      registerNotificationSW();
+    }
 
     unsubscribeMessages = db
       .collection('messages')
