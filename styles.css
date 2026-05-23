@@ -160,7 +160,9 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex: 1;
   min-width: 0;
+  justify-content: flex-end;
 }
 
 .btn-icon {
@@ -200,7 +202,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 130px;
+  flex: 1;
+  min-width: 0;
 }
 
 .btn-signout {
@@ -542,8 +545,8 @@ emoji-picker {
   border-radius: 20px;
   padding: 0.2rem 0.5rem;
   cursor: pointer;
+  flex: 1;
   min-width: 0;
-  max-width: 160px;
   transition: background 0.15s;
   color: inherit;
 }
@@ -739,10 +742,6 @@ emoji-picker {
   .chat-header {
     padding: 0 0.5rem;
     gap: 0.25rem;
-  }
-
-  .user-name {
-    max-width: 80px;
   }
 
   .btn-signout {
