@@ -103,7 +103,7 @@
       await db.collection('messages').add({
         text,
         uid: user.uid,
-        displayName: user.displayName || user.email || 'Family',
+        displayName: user.displayName || user.email || 'KidsChat',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       input.value = '';
@@ -143,7 +143,7 @@
 
   if (messaging) {
     messaging.onMessage((payload) => {
-      const title = payload.notification?.title || 'Family Chat';
+      const title = payload.notification?.title || 'KidsChat';
       const body = payload.notification?.body || 'New message received';
       pushStatus.textContent = `${title}: ${body}`;
     });

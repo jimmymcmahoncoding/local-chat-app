@@ -3,21 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Family Chat</title>
+    <title>KidsChat</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="app">
-      <h1>Family Chat</h1>
-      <p class="hint">Private chat for approved family members only.</p>
+      <h1>KidsChat</h1>
+      <p class="hint">A private and friendly family chat for approved members only.</p>
 
-      <section id="auth-section">
+      <section id="auth-section" class="panel">
         <button id="sign-in-btn">Sign in with Google</button>
         <button id="sign-out-btn" class="hidden">Sign out</button>
         <p id="auth-status">Not signed in</p>
       </section>
 
-      <section id="chat-section" class="hidden">
+      <section id="chat-section" class="panel hidden">
         <div id="messages" aria-live="polite"></div>
         <form id="message-form">
           <input
@@ -32,7 +32,7 @@
         <p id="message-status"></p>
       </section>
 
-      <section id="push-section" class="hidden">
+      <section id="push-section" class="panel hidden">
         <button id="enable-push-btn">Enable push notifications</button>
         <p id="push-status"></p>
       </section>
