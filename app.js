@@ -83,13 +83,27 @@
 
     addedChanges.forEach((change) => {
       const message = change.doc.data();
-      if (!message || message.uid === signedInUser.uid) {
+      if (!message) {
+        return;
+      }
+
+      const isSameUser = message.uid === signedInUser.uid;
+      const isActiveWindow = document.visibilityState === 'visible' && document.hasFocus();
+
+      // Avoid notifying for your own message in the active sender window,
+      // but allow it in other inactive windows/tabs of the same account.
+      if (isSameUser && isActiveWindow) {
         return;
       }
 
       const sender = message.displayName || 'Family';
       const body = String(message.text || '').trim() || 'New message received';
-      new Notification(`${sender} sent a message`, { body });
+
+      try {
+        new Notification(`${sender} sent a message`, { body });
+      } catch (error) {
+        console.error('Notification failed:', error);
+      }
     });
   }
 
