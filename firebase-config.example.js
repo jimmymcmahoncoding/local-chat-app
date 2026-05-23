@@ -1,4 +1,4 @@
-window.FAMILY_CHAT_CONFIG = {
+globalThis.FAMILY_CHAT_CONFIG = {
   firebaseConfig: {
     apiKey: 'REPLACE_ME',
     authDomain: 'REPLACE_ME.firebaseapp.com',

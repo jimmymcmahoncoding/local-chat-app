@@ -38,6 +38,7 @@
   const input = document.getElementById('message-input');
 
   let unsubscribeMessages = null;
+  let currentPushToken = null;
 
   function renderMessages(snapshot) {
     messagesEl.innerHTML = '';
@@ -76,6 +77,27 @@
     return Boolean(email && allowedEmails.has(email));
   }
 
+  function tokenDocId(token) {
+    return encodeURIComponent(token);
+  }
+
+  async function upsertPushToken(user, token, enabled) {
+    await db
+      .collection('deviceTokens')
+      .doc(tokenDocId(token))
+      .set(
+        {
+          token,
+          uid: user.uid,
+          email: (user.email || '').toLowerCase().trim(),
+          displayName: user.displayName || user.email || 'Family',
+          enabled,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        },
+        { merge: true }
+      );
+  }
+
   signInBtn.addEventListener('click', async () => {
     try {
       await auth.signInWithPopup(provider);
@@ -86,6 +108,10 @@
 
   signOutBtn.addEventListener('click', async () => {
     try {
+      const user = auth.currentUser;
+      if (user && currentPushToken) {
+        await upsertPushToken(user, currentPushToken, false);
+      }
       await auth.signOut();
     } catch (error) {
       authStatus.textContent = `Sign-out failed: ${error.message}`;
@@ -138,6 +164,15 @@
         return;
       }
 
+      const user = auth.currentUser;
+      if (!user || !isAllowedEmail(user)) {
+        pushStatus.textContent = 'Sign in with an approved family account before enabling push.';
+        return;
+      }
+
+      await upsertPushToken(user, token, true);
+      currentPushToken = token;
+
       const shortToken = `${token.slice(0, 16)}...${token.slice(-8)}`;
       console.log('FCM registration token:', token);
       pushStatus.textContent = `Push notifications enabled. Token: ${shortToken} (full token in browser console).`;
@@ -150,7 +185,13 @@
     messaging.onMessage((payload) => {
       const title = payload.notification?.title || 'Family Chat';
       const body = payload.notification?.body || 'New message received';
+      console.log('Foreground FCM message:', payload);
       pushStatus.textContent = `${title}: ${body}`;
+
+      // Make foreground delivery visible during testing.
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body });
+      }
     });
   }
 
@@ -162,6 +203,7 @@
 
     if (!user) {
       authStatus.textContent = 'Not signed in';
+      currentPushToken = null;
       showChat(false);
       return;
     }
