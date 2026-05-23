@@ -103,7 +103,7 @@
       await db.collection('messages').add({
         text,
         uid: user.uid,
-        displayName: user.displayName || user.email || 'KidsChat',
+        displayName: user.displayName || user.email || 'Guest',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       input.value = '';
