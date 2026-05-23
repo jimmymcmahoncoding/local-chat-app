@@ -10,16 +10,7 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
   const provider = new firebase.auth.GoogleAuthProvider();
-  const pushSupported = 'serviceWorker' in navigator && 'Notification' in window;
-  let messaging = null;
-  if (pushSupported) {
-    try {
-      messaging = firebase.messaging();
-    } catch (error) {
-      messaging = null;
-      console.warn('Push initialization failed:', error);
-    }
-  }
+  const notificationsSupported = 'Notification' in window;
 
   const allowedEmails = new Set(
     (FAMILY_CHAT_CONFIG.allowedFamilyEmails || []).map((email) => email.toLowerCase().trim())
@@ -38,7 +29,7 @@
   const input = document.getElementById('message-input');
 
   let unsubscribeMessages = null;
-  let currentPushToken = null;
+  let hasLoadedInitialMessages = false;
 
   function renderMessages(snapshot) {
     messagesEl.innerHTML = '';
@@ -77,25 +68,29 @@
     return Boolean(email && allowedEmails.has(email));
   }
 
-  function tokenDocId(token) {
-    return encodeURIComponent(token);
-  }
+  function notifyForNewMessages(snapshot, signedInUser) {
+    if (Notification.permission !== 'granted') {
+      return;
+    }
 
-  async function upsertPushToken(user, token, enabled) {
-    await db
-      .collection('deviceTokens')
-      .doc(tokenDocId(token))
-      .set(
-        {
-          token,
-          uid: user.uid,
-          email: (user.email || '').toLowerCase().trim(),
-          displayName: user.displayName || user.email || 'Family',
-          enabled,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        },
-        { merge: true }
-      );
+    const addedChanges = snapshot.docChanges().filter((change) => change.type === 'added');
+
+    // Do not notify for historical messages loaded on first subscription.
+    if (!hasLoadedInitialMessages) {
+      hasLoadedInitialMessages = true;
+      return;
+    }
+
+    addedChanges.forEach((change) => {
+      const message = change.doc.data();
+      if (!message || message.uid === signedInUser.uid) {
+        return;
+      }
+
+      const sender = message.displayName || 'Family';
+      const body = String(message.text || '').trim() || 'New message received';
+      new Notification(`${sender} sent a message`, { body });
+    });
   }
 
   signInBtn.addEventListener('click', async () => {
@@ -108,10 +103,6 @@
 
   signOutBtn.addEventListener('click', async () => {
     try {
-      const user = auth.currentUser;
-      if (user && currentPushToken) {
-        await upsertPushToken(user, currentPushToken, false);
-      }
       await auth.signOut();
     } catch (error) {
       authStatus.textContent = `Sign-out failed: ${error.message}`;
@@ -141,59 +132,23 @@
 
   enablePushBtn.addEventListener('click', async () => {
     try {
-      if (!messaging || !pushSupported) {
-        pushStatus.textContent = 'Push notifications are not supported in this browser.';
+      if (!notificationsSupported) {
+        pushStatus.textContent = 'Notifications are not supported in this browser.';
         return;
       }
-      if (!FAMILY_CHAT_CONFIG.vapidPublicKey) {
-        pushStatus.textContent = 'Set vapidPublicKey in firebase-config.js first.';
-        return;
-      }
-      const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         pushStatus.textContent = 'Notification permission not granted.';
         return;
       }
-      const token = await messaging.getToken({
-        vapidKey: FAMILY_CHAT_CONFIG.vapidPublicKey,
-        serviceWorkerRegistration: registration
-      });
-      if (!token) {
-        pushStatus.textContent = 'No push token returned. Check Firebase setup.';
-        return;
-      }
 
-      const user = auth.currentUser;
-      if (!user || !isAllowedEmail(user)) {
-        pushStatus.textContent = 'Sign in with an approved family account before enabling push.';
-        return;
-      }
-
-      await upsertPushToken(user, token, true);
-      currentPushToken = token;
-
-      const shortToken = `${token.slice(0, 16)}...${token.slice(-8)}`;
-      console.log('FCM registration token:', token);
-      pushStatus.textContent = `Push notifications enabled. Token: ${shortToken} (full token in browser console).`;
+      pushStatus.textContent =
+        'Notifications enabled. You will receive alerts for new family messages while this app is open.';
     } catch (error) {
       pushStatus.textContent = `Failed to enable push: ${error.message}`;
     }
   });
-
-  if (messaging) {
-    messaging.onMessage((payload) => {
-      const title = payload.notification?.title || 'Family Chat';
-      const body = payload.notification?.body || 'New message received';
-      console.log('Foreground FCM message:', payload);
-      pushStatus.textContent = `${title}: ${body}`;
-
-      // Make foreground delivery visible during testing.
-      if (Notification.permission === 'granted') {
-        new Notification(title, { body });
-      }
-    });
-  }
 
   auth.onAuthStateChanged((user) => {
     if (unsubscribeMessages) {
@@ -203,7 +158,7 @@
 
     if (!user) {
       authStatus.textContent = 'Not signed in';
-      currentPushToken = null;
+      hasLoadedInitialMessages = false;
       showChat(false);
       return;
     }
@@ -222,6 +177,9 @@
       .collection('messages')
       .orderBy('createdAt', 'asc')
       .limit(100)
-      .onSnapshot(renderMessages);
+      .onSnapshot((snapshot) => {
+        renderMessages(snapshot);
+        notifyForNewMessages(snapshot, user);
+      });
   });
 })();

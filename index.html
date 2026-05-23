@@ -1,48 +1,44 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Family Chat</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="app">
-      <h1>Family Chat</h1>
-      <p class="hint">Private chat for approved family members only.</p>
 
-      <section id="auth-section">
-        <button id="sign-in-btn">Sign in with Google</button>
-        <button id="sign-out-btn" class="hidden">Sign out</button>
-        <p id="auth-status">Not signed in</p>
-      </section>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Chat</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
 
-      <section id="chat-section" class="hidden">
-        <div id="messages" aria-live="polite"></div>
-        <form id="message-form">
-          <input
-            id="message-input"
-            type="text"
-            maxlength="500"
-            placeholder="Type a message..."
-            required
-          />
-          <button type="submit">Send</button>
-        </form>
-        <p id="message-status"></p>
-      </section>
+<body>
+  <main class="app">
+    <h1>Family Chat</h1>
+    <p class="hint">Private chat for approved family members only.</p>
 
-      <section id="push-section" class="hidden">
-        <button id="enable-push-btn">Enable push notifications</button>
-        <p id="push-status"></p>
-      </section>
-    </main>
+    <section id="auth-section">
+      <button id="sign-in-btn">Sign in with Google</button>
+      <button id="sign-out-btn" class="hidden">Sign out</button>
+      <p id="auth-status">Not signed in</p>
+    </section>
 
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
-    <script src="firebase-config.js"></script>
-    <script src="app.js"></script>
-  </body>
+    <section id="chat-section" class="hidden">
+      <div id="messages" aria-live="polite"></div>
+      <form id="message-form">
+        <input id="message-input" type="text" maxlength="500" placeholder="Type a message..." required />
+        <button type="submit">Send</button>
+      </form>
+      <p id="message-status"></p>
+    </section>
+
+    <section id="push-section" class="hidden">
+      <button id="enable-push-btn">Enable push notifications</button>
+      <p id="push-status"></p>
+    </section>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+
 </html>
