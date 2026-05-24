@@ -497,6 +497,8 @@
     }
   });
 
+  messagesEl.addEventListener('click', closeAllPickers);
+
   gifSearchInput.addEventListener('input', () => {
     clearTimeout(gifSearchTimeout);
     gifSearchTimeout = setTimeout(() => fetchGifs(gifSearchInput.value.trim(), 0), 400);
