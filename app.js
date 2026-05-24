@@ -10,6 +10,7 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
   const provider = new firebase.auth.GoogleAuthProvider();
+  const microsoftProvider = new firebase.auth.OAuthProvider('microsoft.com');
   const notificationsSupported = 'Notification' in window;
 
   const allowedEmails = new Set(
@@ -17,6 +18,7 @@
   );
 
   const signInBtn = document.getElementById('sign-in-btn');
+  const signInMsBtn = document.getElementById('sign-in-ms-btn');
   const signOutBtn = document.getElementById('sign-out-btn');
   const authStatus = document.getElementById('auth-status');
   const chatSection = document.getElementById('chat-section');
@@ -252,16 +254,19 @@
       });
   }
 
-  signInBtn.addEventListener('click', async () => {
+  async function handleSignIn(authProvider) {
     try {
       if (notificationsSupported && Notification.permission === 'default') {
         await Notification.requestPermission().catch(() => { });
       }
-      await auth.signInWithPopup(provider);
+      await auth.signInWithPopup(authProvider);
     } catch (error) {
       authStatus.textContent = `Sign-in failed: ${error.message}`;
     }
-  });
+  }
+
+  signInBtn.addEventListener('click', () => handleSignIn(provider));
+  signInMsBtn.addEventListener('click', () => handleSignIn(microsoftProvider));
 
   signOutBtn.addEventListener('click', async () => {
     try {

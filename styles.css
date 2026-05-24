@@ -112,6 +112,35 @@ body {
   flex-shrink: 0;
 }
 
+.btn-microsoft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border: 1.5px solid #dadce0;
+  border-radius: 50px;
+  background: #fff;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #3c4043;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.btn-microsoft:hover {
+  background: #f8f9fa;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.microsoft-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
 .signin-status {
   margin-top: 1.25rem;
   font-size: 0.85rem;
@@ -899,8 +928,13 @@ emoji-picker {
 }
 
 @keyframes msg-highlight {
-  0%   { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.7); }
-  100% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0); }
+  0% {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.7);
+  }
+
+  100% {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0);
+  }
 }
 
 .msg--highlight .msg__bubble {
