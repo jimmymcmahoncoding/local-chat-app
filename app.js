@@ -138,7 +138,13 @@
           </div>`;
       }
 
-      wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data));
+      wrapper.dataset.messageId = doc.id;
+      wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data, doc.id));
+      const replyQuote = wrapper.querySelector('.msg__reply');
+      if (replyQuote && data.replyTo?.messageId) {
+        replyQuote.classList.add('msg__reply--linkable');
+        replyQuote.addEventListener('click', () => scrollToMessage(data.replyTo.messageId));
+      }
       messagesEl.appendChild(wrapper);
     });
 
@@ -375,10 +381,11 @@
     gifPanel.classList.add('hidden');
   }
 
-  function setReply(data) {
+  function setReply(data, docId) {
     replyTo = {
       text: data.type === 'gif' ? '[GIF]' : String(data.text || '').slice(0, 200),
       displayName: String(data.displayName || 'Family').slice(0, 50),
+      messageId: docId,
     };
     replyPreviewName.textContent = replyTo.displayName;
     replyPreviewText.textContent = replyTo.text;
@@ -390,6 +397,14 @@
   function clearReply() {
     replyTo = null;
     replyPreview.classList.add('hidden');
+  }
+
+  function scrollToMessage(messageId) {
+    const target = messagesEl.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('msg--highlight');
+    setTimeout(() => target.classList.remove('msg--highlight'), 1500);
   }
 
   replyCancelBtn.addEventListener('click', clearReply);

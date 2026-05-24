@@ -889,3 +889,20 @@ emoji-picker {
 .msg--own .msg__reply__text {
   color: rgba(255, 255, 255, 0.8);
 }
+
+.msg__reply--linkable {
+  cursor: pointer;
+}
+
+.msg__reply--linkable:hover {
+  filter: brightness(0.93);
+}
+
+@keyframes msg-highlight {
+  0%   { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.7); }
+  100% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0); }
+}
+
+.msg--highlight .msg__bubble {
+  animation: msg-highlight 1.5s ease-out;
+}
