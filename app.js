@@ -522,7 +522,6 @@
     const end = input.selectionEnd ?? input.value.length;
     input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
     input.setSelectionRange(start + emoji.length, start + emoji.length);
-    input.focus();
   });
 
   auth.onAuthStateChanged((user) => {
