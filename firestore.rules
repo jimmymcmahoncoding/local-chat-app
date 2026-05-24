@@ -5,17 +5,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function allowedFamilyEmails() {
+      return [
+        'jimmymcma@gmail.com',
+        'jimmymcmahoncoding@gmail.com',
+        'anna5_11@hotmail.com',
+        'jimmymcmayt@gmail.com'
+      ];
+    }
+
     function isFamilyMember() {
       // IMPORTANT: Replace this placeholder list before deploying to production.
       return signedIn() && (
         (
           request.auth.token.email is string
-          && request.auth.token.email.lower() in [
-            'jimmymcma@gmail.com',
-            'jimmymcmahoncoding@gmail.com',
-            'anna5_11@hotmail.com',
-            'jimmymcmayt@gmail.com'
-          ]
+          && request.auth.token.email.lower() in allowedFamilyEmails()
         )
         ||
         (
@@ -24,12 +28,7 @@ service cloud.firestore {
           && request.auth.token.firebase.identities.email is list
           && request.auth.token.firebase.identities.email.size() > 0
           && request.auth.token.firebase.identities.email[0] is string
-          && request.auth.token.firebase.identities.email[0].lower() in [
-            'jimmymcma@gmail.com',
-            'jimmymcmahoncoding@gmail.com',
-            'anna5_11@hotmail.com',
-            'jimmymcmayt@gmail.com'
-          ]
+          && request.auth.token.firebase.identities.email[0].lower() in allowedFamilyEmails()
         )
       );
     }
