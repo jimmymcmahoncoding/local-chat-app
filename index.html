@@ -44,30 +44,36 @@
 
       <form id="email-auth-form" class="email-auth-form" novalidate>
         <div id="name-row" class="email-auth-form__row hidden">
-          <input id="email-name-input" type="text" class="email-auth-input" placeholder="Your name" maxlength="50" autocomplete="name" />
+          <input id="email-name-input" type="text" class="email-auth-input" placeholder="Your name" maxlength="50"
+            autocomplete="name" />
         </div>
         <div class="email-auth-form__row">
-          <input id="email-email-input" type="email" class="email-auth-input" placeholder="Email address" autocomplete="email" />
+          <input id="email-email-input" type="email" class="email-auth-input" placeholder="Email address"
+            autocomplete="email" />
         </div>
         <div class="email-auth-form__row">
-          <input id="email-password-input" type="password" class="email-auth-input" placeholder="Password (min 6 chars)" autocomplete="current-password" />
+          <input id="email-password-input" type="password" class="email-auth-input" placeholder="Password (min 6 chars)"
+            autocomplete="current-password" />
         </div>
         <button type="submit" id="email-submit-btn" class="btn-email-submit">Sign in</button>
       </form>
 
-      <p class="signin-mode-toggle signin-mode-toggle--fwd">No account? <button type="button" id="signup-mode-btn" class="link-btn">Sign up</button></p>
-      <p class="signin-mode-toggle signin-mode-toggle--back hidden">Have an account? <button type="button" id="signin-mode-btn" class="link-btn">Sign in</button></p>
+      <p class="signin-mode-toggle signin-mode-toggle--fwd">No account? <button type="button" id="signup-mode-btn"
+          class="link-btn">Sign up</button></p>
+      <p class="signin-mode-toggle signin-mode-toggle--back hidden">Have an account? <button type="button"
+          id="signin-mode-btn" class="link-btn">Sign in</button></p>
 
       <p id="auth-status" class="signin-status"></p>
     </div>
 
-  <div id="pending-card" class="signin-card hidden">
-    <div class="signin-icon" aria-hidden="true">⏳</div>
-    <h1 class="signin-title">Awaiting Approval</h1>
-    <p class="signin-hint">Your request has been sent to the family admin. You'll get access once approved — just sign in again to check.</p>
-    <p id="pending-email-display" class="pending-email-display"></p>
-    <button id="pending-signout-btn" type="button" class="btn-pending-signout">Sign out</button>
-  </div>
+    <div id="pending-card" class="signin-card hidden">
+      <div class="signin-icon" aria-hidden="true">⏳</div>
+      <h1 class="signin-title">Awaiting Approval</h1>
+      <p class="signin-hint">Your request has been sent to the family admin. You'll get access once approved — just sign
+        in again to check.</p>
+      <p id="pending-email-display" class="pending-email-display"></p>
+      <button id="pending-signout-btn" type="button" class="btn-pending-signout">Sign out</button>
+    </div>
 
   </div>
 
@@ -80,7 +86,8 @@
         <span>KidsChat</span>
       </div>
       <div class="chat-header__actions">
-        <button id="admin-btn" class="btn-admin hidden" title="Pending approvals" aria-label="Pending approvals">👥<span id="admin-badge" class="admin-badge hidden">0</span></button>
+        <button id="admin-btn" class="btn-admin hidden" title="Pending approvals" aria-label="Pending approvals">👥<span
+            id="admin-badge" class="admin-badge hidden">0</span></button>
         <button id="profile-btn" class="btn-profile" title="Edit profile" aria-label="Edit profile">
           <span id="user-avatar" class="user-avatar" aria-hidden="true">😀</span>
           <span id="user-name" class="user-name"></span>

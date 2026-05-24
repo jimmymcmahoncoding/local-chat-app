@@ -80,7 +80,9 @@ service cloud.firestore {
           )
         );
       allow delete: if isAllowed() && resource.data.uid == request.auth.uid;
-      allow update: if false;
+      allow update: if isAllowed()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+        && request.resource.data.reactions is map;
     }
 
     match /userProfiles/{userId} {

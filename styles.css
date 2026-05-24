@@ -937,10 +937,12 @@ emoji-picker {
     height: 120px;
   }
 }
+
 .msg__actions {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  position: relative;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -1038,6 +1040,113 @@ emoji-picker {
   animation: msg-highlight 1.5s ease-out;
 }
 
+/* ── Message body wrapper (own messages: bubble + reactions) ── */
+.msg__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+/* ── React button ─────────────────────────────────────────── */
+.msg__react-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.88rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: background 0.15s;
+  line-height: 1;
+}
+.msg__react-btn:hover {
+  background: #e5e7eb;
+}
+
+/* ── Reaction picker popup ───────────────────────────────── */
+.msg__reaction-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 50px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.13);
+  display: flex;
+  gap: 0;
+  padding: 0.25rem 0.35rem;
+  z-index: 60;
+  white-space: nowrap;
+}
+.msg__reaction-picker.hidden {
+  display: none;
+}
+.msg--own .msg__reaction-picker {
+  right: auto;
+  left: 0;
+}
+
+.reaction-picker__btn {
+  font-size: 1.3rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem 0.25rem;
+  border-radius: 50%;
+  transition: transform 0.12s, background 0.1s;
+}
+.reaction-picker__btn:hover {
+  transform: scale(1.35);
+  background: #f3f4f6;
+}
+
+/* ── Reactions bar (below bubble) ────────────────────────── */
+.msg__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+.msg--other .msg__reactions {
+  padding-left: 0.1rem;
+}
+
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 50px;
+  background: #f9fafb;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.3;
+  transition: background 0.12s, border-color 0.12s;
+}
+.reaction-pill:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+.reaction-pill--mine {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+.reaction-pill--mine:hover {
+  background: rgba(99, 102, 241, 0.16);
+}
+.reaction-pill__count {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+.reaction-pill--mine .reaction-pill__count {
+  color: #6366f1;
+}
+
 /* ═══════════════════════════════════════════
    Email auth form & sign-in/sign-up toggle
 ═══════════════════════════════════════════ */
@@ -1050,6 +1159,7 @@ emoji-picker {
   color: #9ca3af;
   font-size: 0.8rem;
 }
+
 .signin-divider::before,
 .signin-divider::after {
   content: '';
@@ -1064,6 +1174,7 @@ emoji-picker {
   gap: 0.5rem;
   width: 100%;
 }
+
 .email-auth-form__row {
   width: 100%;
 }
@@ -1080,6 +1191,7 @@ emoji-picker {
   outline: none;
   transition: border-color 0.15s;
 }
+
 .email-auth-input:focus {
   border-color: #6366f1;
   background: #fff;
@@ -1098,9 +1210,11 @@ emoji-picker {
   transition: background 0.15s, opacity 0.15s;
   margin-top: 0.25rem;
 }
+
 .btn-email-submit:hover:not(:disabled) {
   background: #4f46e5;
 }
+
 .btn-email-submit:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -1112,6 +1226,7 @@ emoji-picker {
   color: #6b7280;
   text-align: center;
 }
+
 .link-btn {
   background: none;
   border: none;
@@ -1123,6 +1238,7 @@ emoji-picker {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
 .link-btn:hover {
   color: #4f46e5;
 }
@@ -1150,6 +1266,7 @@ emoji-picker {
   cursor: pointer;
   transition: background 0.15s;
 }
+
 .btn-pending-signout:hover {
   background: #f3f4f6;
 }
@@ -1169,6 +1286,7 @@ emoji-picker {
   border-radius: 8px;
   transition: background 0.15s;
 }
+
 .btn-admin:hover {
   background: rgba(0, 0, 0, 0.06);
 }
@@ -1212,6 +1330,7 @@ emoji-picker {
   box-sizing: border-box;
   overflow-y: auto;
 }
+
 .admin-panel.hidden {
   display: none;
 }
@@ -1251,6 +1370,7 @@ emoji-picker {
   line-height: 1;
   transition: background 0.15s;
 }
+
 .admin-panel__close:hover {
   background: #f3f4f6;
 }
@@ -1310,6 +1430,7 @@ emoji-picker {
   cursor: pointer;
   transition: background 0.15s;
 }
+
 .btn-approve:hover:not(:disabled) {
   background: #16a34a;
 }
@@ -1326,6 +1447,7 @@ emoji-picker {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
+
 .btn-reject:hover:not(:disabled) {
   background: #fee2e2;
   border-color: #fca5a5;

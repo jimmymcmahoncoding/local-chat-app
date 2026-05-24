@@ -86,6 +86,8 @@
     '⚽', '🎸', '🍕', '🚀', '🦄',
   ];
 
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
   // Pastel bubble colours for other users (background, text)
   const BUBBLE_PALETTE = [
     { bg: '#ede9fe', text: '#5b21b6' },
@@ -139,7 +141,38 @@
     return `background:${bg};color:${text};`;
   }
 
+  function buildReactionsBar(reactions, currentUid) {
+    if (!reactions || typeof reactions !== 'object') return '';
+    const entries = Object.entries(reactions).filter(([, uids]) => Array.isArray(uids) && uids.length > 0);
+    if (!entries.length) return '';
+    const pills = entries.map(([emoji, uids]) => {
+      if (!REACTION_EMOJIS.includes(emoji)) return '';
+      const mine = currentUid && uids.includes(currentUid);
+      return `<button class="reaction-pill${mine ? ' reaction-pill--mine' : ''}" data-emoji="${escapeHtml(emoji)}" type="button">${escapeHtml(emoji)}<span class="reaction-pill__count">${uids.length}</span></button>`;
+    }).join('');
+    if (!pills) return '';
+    return `<div class="msg__reactions">${pills}</div>`;
+  }
+
+  async function toggleReaction(messageId, emoji, uid) {
+    if (!cachedIsAllowed || !uid || !REACTION_EMOJIS.includes(emoji)) return;
+    try {
+      const ref = db.collection('messages').doc(messageId);
+      const snap = await ref.get();
+      if (!snap.exists) return;
+      const uids = (snap.data().reactions?.[emoji]) || [];
+      await ref.update({
+        [`reactions.${emoji}`]: uids.includes(uid)
+          ? firebase.firestore.FieldValue.arrayRemove(uid)
+          : firebase.firestore.FieldValue.arrayUnion(uid)
+      });
+    } catch (err) {
+      console.error('Reaction failed:', err);
+    }
+  }
+
   function renderMessages(snapshot, currentUser) {
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 150;
     messagesEl.innerHTML = '';
     const docs = snapshot.docs;
 
@@ -147,6 +180,10 @@
       messagesEl.innerHTML = '<p class="messages-empty">No messages yet. Say hello! 👋</p>';
       return;
     }
+
+    const pickerHtml = `<div class="msg__reaction-picker hidden" role="toolbar" aria-label="React">${
+      REACTION_EMOJIS.map(e => `<button class="reaction-picker__btn" data-emoji="${e}" type="button" aria-label="React ${e}">${e}</button>`).join('')
+    }</div>`;
 
     docs.forEach((doc) => {
       const data = doc.data();
@@ -173,6 +210,8 @@
           </div>`
         : '';
 
+      const reactionsHtml = buildReactionsBar(data.reactions, currentUser?.uid);
+
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
 
@@ -181,11 +220,16 @@
           <div class="msg__actions">
             <button class="msg__delete-btn" type="button" aria-label="Delete message">🗑️</button>
             <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
+            <button class="msg__react-btn" type="button" aria-label="React">😊</button>
+            ${pickerHtml}
           </div>
-          <div class="msg__bubble">
-            ${replyBlock}
-            ${mediaContent}
-            <div class="msg__time">${escapeHtml(time)}</div>
+          <div class="msg__body">
+            <div class="msg__bubble">
+              ${replyBlock}
+              ${mediaContent}
+              <div class="msg__time">${escapeHtml(time)}</div>
+            </div>
+            ${reactionsHtml}
           </div>`;
       } else {
         const hasEmojiAvatar = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
@@ -202,27 +246,47 @@
               ${mediaContent}
               <div class="msg__time">${escapeHtml(time)}</div>
             </div>
+            ${reactionsHtml}
           </div>
           <div class="msg__actions">
             <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
+            <button class="msg__react-btn" type="button" aria-label="React">😊</button>
+            ${pickerHtml}
           </div>`;
       }
 
       wrapper.dataset.messageId = doc.id;
       wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data, doc.id));
       const deleteBtn = wrapper.querySelector('.msg__delete-btn');
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', () => deleteMessage(doc.id));
-      }
+      if (deleteBtn) deleteBtn.addEventListener('click', () => deleteMessage(doc.id));
       const replyQuote = wrapper.querySelector('.msg__reply');
       if (replyQuote && data.replyTo?.messageId) {
         replyQuote.classList.add('msg__reply--linkable');
         replyQuote.addEventListener('click', () => scrollToMessage(data.replyTo.messageId));
       }
+
+      const picker = wrapper.querySelector('.msg__reaction-picker');
+      wrapper.querySelector('.msg__react-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = !picker.classList.contains('hidden');
+        messagesEl.querySelectorAll('.msg__reaction-picker:not(.hidden)').forEach((p) => p.classList.add('hidden'));
+        if (!isOpen) picker.classList.remove('hidden');
+      });
+      picker.addEventListener('click', (e) => e.stopPropagation());
+      picker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          toggleReaction(doc.id, btn.dataset.emoji, currentUser?.uid);
+          picker.classList.add('hidden');
+        });
+      });
+      wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
+        pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
+      });
+
       messagesEl.appendChild(wrapper);
     });
 
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   async function deleteMessage(docId) {
@@ -753,9 +817,9 @@
     } catch (err) {
       const msg = err.code === 'auth/email-already-in-use' ? 'An account with this email already exists. Try signing in.'
         : err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' ? 'Incorrect email or password.'
-        : err.code === 'auth/invalid-email' ? 'Invalid email address.'
-        : err.code === 'auth/weak-password' ? 'Password is too weak.'
-        : err.message || 'Authentication failed.';
+          : err.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : err.code === 'auth/weak-password' ? 'Password is too weak.'
+              : err.message || 'Authentication failed.';
       authStatus.textContent = msg;
     } finally {
       emailSubmitBtn.disabled = false;
@@ -832,6 +896,10 @@
   adminBtn.addEventListener('click', () => adminPanel.classList.toggle('hidden'));
   adminPanelCloseBtn.addEventListener('click', () => adminPanel.classList.add('hidden'));
   adminPanel.addEventListener('click', (e) => { if (e.target === adminPanel) adminPanel.classList.add('hidden'); });
+
+  document.addEventListener('click', () => {
+    messagesEl.querySelectorAll('.msg__reaction-picker:not(.hidden)').forEach((p) => p.classList.add('hidden'));
+  });
 
   // ── Auth state ────────────────────────────────────────
   auth.onAuthStateChanged(async (user) => {
