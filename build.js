@@ -26,10 +26,7 @@ const config = {
         messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
         appId: process.env.FIREBASE_APP_ID,
     },
-    allowedFamilyEmails: (process.env.ALLOWED_EMAILS || '')
-        .split(',')
-        .map((e) => e.trim())
-        .filter(Boolean),
+    allowedFamilyEmails: [], // Deprecated: access control now uses Firestore allowedUsers collection
     vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
     giphyApiKey: process.env.GIPHY_API_KEY || '',
 };

@@ -5,19 +5,42 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isFamilyMember() {
-      // IMPORTANT: Replace this placeholder list before deploying to production.
-      return signedIn() && request.auth.token.email in [
-        'jimmymcma@gmail.com',
-        'jimmymcmahoncoding@gmail.com',
-        'anna5_11@hotmail.com',
-        'jimmymcmayt@gmail.com'
-      ];
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isAllowed() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/allowedUsers/$(userEmail()));
+    }
+
+    function isAdmin() {
+      return isAllowed() &&
+        get(/databases/$(database)/documents/allowedUsers/$(userEmail())).data.isAdmin == true;
+    }
+
+    match /allowedUsers/{email} {
+      allow read: if isAllowed();
+      allow write: if isAdmin();
+    }
+
+    match /pendingUsers/{email} {
+      allow create: if signedIn()
+        && userEmail() == email
+        && !exists(/databases/$(database)/documents/allowedUsers/$(email))
+        && request.resource.data.keys().hasOnly(['email', 'displayName', 'requestedAt'])
+        && request.resource.data.email is string
+        && request.resource.data.email == email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 50
+        && request.resource.data.requestedAt == request.time;
+      allow read, delete: if isAdmin();
     }
 
     match /messages/{messageId} {
-      allow read: if isFamilyMember();
-      allow create: if isFamilyMember()
+      allow read: if isAllowed();
+      allow create: if isAllowed()
         && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'replyTo'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
@@ -34,7 +57,6 @@ service cloud.firestore {
           && (!('messageId' in request.resource.data.replyTo) || request.resource.data.replyTo.messageId is string)
         ))
         && (
-          // Regular text message
           (
             !('type' in request.resource.data)
             && request.resource.data.text is string
@@ -42,7 +64,6 @@ service cloud.firestore {
             && request.resource.data.text.size() <= 500
           )
           ||
-          // GIF message
           (
             request.resource.data.type == 'gif'
             && request.resource.data.gifUrl is string
@@ -50,7 +71,6 @@ service cloud.firestore {
             && request.resource.data.text == '[GIF]'
           )
           ||
-          // Sticker message (emoji stickers; max size 10 covers multi-codepoint emoji)
           (
             request.resource.data.type == 'sticker'
             && request.resource.data.sticker is string
@@ -59,13 +79,13 @@ service cloud.firestore {
             && request.resource.data.text == '[Sticker]'
           )
         );
-      allow delete: if isFamilyMember() && resource.data.uid == request.auth.uid;
+      allow delete: if isAllowed() && resource.data.uid == request.auth.uid;
       allow update: if false;
     }
 
     match /userProfiles/{userId} {
-      allow read: if isFamilyMember();
-      allow write: if isFamilyMember()
+      allow read: if isAllowed();
+      allow write: if isAllowed()
         && request.auth.uid == userId
         && request.resource.data.keys().hasOnly(['avatar', 'displayName'])
         && request.resource.data.avatar is string

@@ -13,10 +13,6 @@
   const microsoftProvider = new firebase.auth.OAuthProvider('microsoft.com');
   const notificationsSupported = 'Notification' in window;
 
-  const allowedEmails = new Set(
-    (FAMILY_CHAT_CONFIG.allowedFamilyEmails || []).map((email) => email.toLowerCase().trim())
-  );
-
   const signInBtn = document.getElementById('sign-in-btn');
   const signInMsBtn = document.getElementById('sign-in-ms-btn');
   const signOutBtn = document.getElementById('sign-out-btn');
@@ -51,6 +47,25 @@
   const replyPreviewName = document.getElementById('reply-preview-name');
   const replyPreviewText = document.getElementById('reply-preview-text');
   const replyCancelBtn = document.getElementById('reply-cancel-btn');
+  const emailAuthForm = document.getElementById('email-auth-form');
+  const emailNameInput = document.getElementById('email-name-input');
+  const emailEmailInput = document.getElementById('email-email-input');
+  const emailPasswordInput = document.getElementById('email-password-input');
+  const emailSubmitBtn = document.getElementById('email-submit-btn');
+  const nameRow = document.getElementById('name-row');
+  const signupModeBtn = document.getElementById('signup-mode-btn');
+  const signinModeBtn = document.getElementById('signin-mode-btn');
+  const signupToggleFwd = document.querySelector('.signin-mode-toggle--fwd');
+  const signupToggleBack = document.querySelector('.signin-mode-toggle--back');
+  const signinCard = document.getElementById('signin-card');
+  const pendingCard = document.getElementById('pending-card');
+  const pendingEmailDisplay = document.getElementById('pending-email-display');
+  const pendingSignoutBtn = document.getElementById('pending-signout-btn');
+  const adminBtn = document.getElementById('admin-btn');
+  const adminBadge = document.getElementById('admin-badge');
+  const adminPanel = document.getElementById('admin-panel');
+  const adminPanelList = document.getElementById('admin-panel-list');
+  const adminPanelCloseBtn = document.getElementById('admin-panel-close-btn');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -58,6 +73,10 @@
   let currentProfile = { avatar: '😀', displayName: '' };
   let profileSelectedAvatar = '😀';
   let replyTo = null;
+  let cachedIsAllowed = false;
+  let cachedIsAdmin = false;
+  let isSignUpMode = false;
+  let unsubscribePending = null;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -233,19 +252,48 @@
     }
   }
 
-  function showChat(enabled) {
-    chatSection.classList.toggle('hidden', !enabled);
-    signinScreen.classList.toggle('hidden', enabled);
-    signOutBtn.classList.toggle('hidden', !enabled);
-    if (!enabled) {
+  function showUI(screen) {
+    // screen: 'signin' | 'pending' | 'chat'
+    const isChat = screen === 'chat';
+    chatSection.classList.toggle('hidden', !isChat);
+    signinScreen.classList.toggle('hidden', isChat);
+    signOutBtn.classList.toggle('hidden', !isChat);
+    if (!isChat) {
       pushSection.classList.add('hidden');
       closeAllPickers();
     }
+    if (!isChat) {
+      const isPending = screen === 'pending';
+      signinCard.classList.toggle('hidden', isPending);
+      pendingCard.classList.toggle('hidden', !isPending);
+    }
   }
 
-  function isAllowedEmail(user) {
-    const email = user?.email?.toLowerCase().trim();
-    return Boolean(email && allowedEmails.has(email));
+  async function checkAllowedStatus(user) {
+    if (!user?.email) return { allowed: false, isAdmin: false };
+    const email = user.email.toLowerCase().trim();
+    try {
+      const snap = await db.collection('allowedUsers').doc(email).get();
+      if (!snap.exists) return { allowed: false, isAdmin: false };
+      return { allowed: true, isAdmin: snap.data().isAdmin === true };
+    } catch {
+      return { allowed: false, isAdmin: false };
+    }
+  }
+
+  async function addToPending(user) {
+    if (!user?.email) return;
+    const email = user.email.toLowerCase().trim();
+    const displayName = user.displayName || email.split('@')[0];
+    try {
+      await db.collection('pendingUsers').doc(email).set({
+        email,
+        displayName,
+        requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (err) {
+      console.warn('Failed to add pending request:', err);
+    }
   }
 
   function registerNotificationSW() {
@@ -342,7 +390,7 @@
     event.preventDefault();
     const text = input.value.trim();
     const user = auth.currentUser;
-    if (!text || !user || !isAllowedEmail(user)) {
+    if (!text || !user || !cachedIsAllowed) {
       return;
     }
     try {
@@ -479,7 +527,7 @@
 
   async function sendSticker(sticker) {
     const user = auth.currentUser;
-    if (!user || !isAllowedEmail(user)) return;
+    if (!user || !cachedIsAllowed) return;
     closeAllPickers();
     try {
       const stickerData = {
@@ -608,7 +656,7 @@
 
   async function sendGif(gifUrl) {
     const user = auth.currentUser;
-    if (!user || !isAllowedEmail(user) || !isValidGiphyUrl(gifUrl)) return;
+    if (!user || !cachedIsAllowed || !isValidGiphyUrl(gifUrl)) return;
     closeAllPickers();
     try {
       const gifData = {
@@ -671,34 +719,167 @@
     input.setSelectionRange(start + emoji.length, start + emoji.length);
   });
 
-  auth.onAuthStateChanged((user) => {
-    if (unsubscribeMessages) {
-      unsubscribeMessages();
-      unsubscribeMessages = null;
+  // ── Email auth toggle ──────────────────────────────────
+  function setSignUpMode(on) {
+    isSignUpMode = on;
+    nameRow.classList.toggle('hidden', !on);
+    emailSubmitBtn.textContent = on ? 'Request access' : 'Sign in';
+    signupToggleFwd.classList.toggle('hidden', on);
+    signupToggleBack.classList.toggle('hidden', !on);
+    emailPasswordInput.setAttribute('autocomplete', on ? 'new-password' : 'current-password');
+    authStatus.textContent = '';
+  }
+
+  signupModeBtn.addEventListener('click', () => setSignUpMode(true));
+  signinModeBtn.addEventListener('click', () => setSignUpMode(false));
+
+  emailAuthForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = emailEmailInput.value.trim();
+    const password = emailPasswordInput.value;
+    const name = emailNameInput.value.trim();
+    if (!email || !password) return;
+    emailSubmitBtn.disabled = true;
+    authStatus.textContent = '';
+    try {
+      if (isSignUpMode) {
+        if (!name) { authStatus.textContent = 'Please enter your name.'; emailSubmitBtn.disabled = false; return; }
+        if (password.length < 6) { authStatus.textContent = 'Password must be at least 6 characters.'; emailSubmitBtn.disabled = false; return; }
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        await cred.user.updateProfile({ displayName: name });
+      } else {
+        await auth.signInWithEmailAndPassword(email, password);
+      }
+    } catch (err) {
+      const msg = err.code === 'auth/email-already-in-use' ? 'An account with this email already exists. Try signing in.'
+        : err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' ? 'Incorrect email or password.'
+        : err.code === 'auth/invalid-email' ? 'Invalid email address.'
+        : err.code === 'auth/weak-password' ? 'Password is too weak.'
+        : err.message || 'Authentication failed.';
+      authStatus.textContent = msg;
+    } finally {
+      emailSubmitBtn.disabled = false;
     }
+  });
+
+  pendingSignoutBtn.addEventListener('click', async () => {
+    try { await auth.signOut(); } catch { /* ignore */ }
+  });
+
+  // ── Admin panel ────────────────────────────────────────
+  function renderPendingList(docs) {
+    adminPanelList.innerHTML = '';
+    if (!docs.length) {
+      adminPanelList.innerHTML = '<p class="admin-panel__empty">No pending requests.</p>';
+      return;
+    }
+    docs.forEach((doc) => {
+      const data = doc.data();
+      const card = document.createElement('div');
+      card.className = 'pending-user-card';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'pending-user-card__name';
+      nameEl.textContent = data.displayName || '(no name)';
+
+      const emailEl = document.createElement('div');
+      emailEl.className = 'pending-user-card__email';
+      emailEl.textContent = data.email;
+
+      const actionsEl = document.createElement('div');
+      actionsEl.className = 'pending-user-card__actions';
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'btn-approve';
+      approveBtn.textContent = 'Approve';
+      approveBtn.addEventListener('click', () => approveUser(data.email, card));
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn-reject';
+      rejectBtn.textContent = 'Reject';
+      rejectBtn.addEventListener('click', () => rejectUser(data.email, card));
+
+      actionsEl.appendChild(approveBtn);
+      actionsEl.appendChild(rejectBtn);
+      card.appendChild(nameEl);
+      card.appendChild(emailEl);
+      card.appendChild(actionsEl);
+      adminPanelList.appendChild(card);
+    });
+  }
+
+  async function approveUser(email, card) {
+    card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await db.collection('allowedUsers').doc(email).set({ isAdmin: false });
+      await db.collection('pendingUsers').doc(email).delete();
+    } catch (err) {
+      card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      console.error('Approve failed:', err);
+    }
+  }
+
+  async function rejectUser(email, card) {
+    card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await db.collection('pendingUsers').doc(email).delete();
+    } catch (err) {
+      card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      console.error('Reject failed:', err);
+    }
+  }
+
+  adminBtn.addEventListener('click', () => adminPanel.classList.toggle('hidden'));
+  adminPanelCloseBtn.addEventListener('click', () => adminPanel.classList.add('hidden'));
+  adminPanel.addEventListener('click', (e) => { if (e.target === adminPanel) adminPanel.classList.add('hidden'); });
+
+  // ── Auth state ────────────────────────────────────────
+  auth.onAuthStateChanged(async (user) => {
+    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+    if (unsubscribePending) { unsubscribePending(); unsubscribePending = null; }
+    cachedIsAllowed = false;
+    cachedIsAdmin = false;
+    adminBtn.classList.add('hidden');
+    adminPanel.classList.add('hidden');
 
     if (!user) {
       authStatus.textContent = '';
       sessionStart = null;
-      showChat(false);
+      showUI('signin');
       return;
     }
 
-    if (!isAllowedEmail(user)) {
-      authStatus.textContent = `Access denied for ${user.email || 'unknown email'}`;
-      showChat(false);
-      auth.signOut();
+    const { allowed, isAdmin } = await checkAllowedStatus(user);
+    cachedIsAllowed = allowed;
+    cachedIsAdmin = isAdmin;
+
+    if (!allowed) {
+      // Add to pending if not already there
+      await addToPending(user);
+      pendingEmailDisplay.textContent = user.email || '';
+      showUI('pending');
       return;
     }
 
     authStatus.textContent = '';
     sessionStart = new Date();
-    showChat(true);
+    showUI('chat');
     updatePushButtonState();
     if (Notification.permission === 'granted') {
       registerNotificationSW();
     }
     loadProfile(user.uid);
+
+    if (isAdmin) {
+      adminBtn.classList.remove('hidden');
+      unsubscribePending = db.collection('pendingUsers')
+        .onSnapshot((snap) => {
+          const count = snap.docs.length;
+          adminBadge.textContent = count;
+          adminBadge.classList.toggle('hidden', count === 0);
+          renderPendingList(snap.docs);
+        });
+    }
 
     unsubscribeMessages = db
       .collection('messages')
