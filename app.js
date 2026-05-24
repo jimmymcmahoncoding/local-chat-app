@@ -77,6 +77,7 @@
   let cachedIsAdmin = false;
   let isSignUpMode = false;
   let unsubscribePending = null;
+  let reactionPickerTargetId = null;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -88,7 +89,48 @@
 
   const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
-  // Pastel bubble colours for other users (background, text)
+  // Single shared reaction picker — position: fixed, repositioned by JS
+  const globalReactionPicker = document.createElement('div');
+  globalReactionPicker.className = 'msg__reaction-picker hidden';
+  globalReactionPicker.setAttribute('role', 'toolbar');
+  globalReactionPicker.setAttribute('aria-label', 'React');
+  REACTION_EMOJIS.forEach((e) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'reaction-picker__btn';
+    btn.dataset.emoji = e;
+    btn.setAttribute('aria-label', `React ${e}`);
+    btn.textContent = e;
+    globalReactionPicker.appendChild(btn);
+  });
+  document.body.appendChild(globalReactionPicker);
+
+  function showReactionPicker(messageId, triggerBtn) {
+    reactionPickerTargetId = messageId;
+    globalReactionPicker.classList.remove('hidden');
+
+    const triggerRect = triggerBtn.getBoundingClientRect();
+    const pickerRect = globalReactionPicker.getBoundingClientRect();
+    const margin = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Default: appear above the trigger button, horizontally centred on it
+    let top = triggerRect.top - pickerRect.height - 6;
+    let left = triggerRect.left + triggerRect.width / 2 - pickerRect.width / 2;
+
+    // If it would go above the viewport, flip below the trigger
+    if (top < margin) top = triggerRect.bottom + 6;
+
+    // Clamp horizontal so it never overflows either edge
+    left = Math.max(margin, Math.min(left, vw - pickerRect.width - margin));
+
+    // Clamp vertical as a safety net
+    top = Math.max(margin, Math.min(top, vh - pickerRect.height - margin));
+
+    globalReactionPicker.style.top = `${top}px`;
+    globalReactionPicker.style.left = `${left}px`;
+  }
   const BUBBLE_PALETTE = [
     { bg: '#ede9fe', text: '#5b21b6' },
     { bg: '#fce7f3', text: '#9d174d' },
@@ -181,10 +223,6 @@
       return;
     }
 
-    const pickerHtml = `<div class="msg__reaction-picker hidden" role="toolbar" aria-label="React">${
-      REACTION_EMOJIS.map(e => `<button class="reaction-picker__btn" data-emoji="${e}" type="button" aria-label="React ${e}">${e}</button>`).join('')
-    }</div>`;
-
     docs.forEach((doc) => {
       const data = doc.data();
       const isOwn = currentUser && data.uid === currentUser.uid;
@@ -221,7 +259,6 @@
             <button class="msg__delete-btn" type="button" aria-label="Delete message">🗑️</button>
             <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
             <button class="msg__react-btn" type="button" aria-label="React">😊</button>
-            ${pickerHtml}
           </div>
           <div class="msg__body">
             <div class="msg__bubble">
@@ -251,7 +288,6 @@
           <div class="msg__actions">
             <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
             <button class="msg__react-btn" type="button" aria-label="React">😊</button>
-            ${pickerHtml}
           </div>`;
       }
 
@@ -265,19 +301,12 @@
         replyQuote.addEventListener('click', () => scrollToMessage(data.replyTo.messageId));
       }
 
-      const picker = wrapper.querySelector('.msg__reaction-picker');
       wrapper.querySelector('.msg__react-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        const isOpen = !picker.classList.contains('hidden');
-        messagesEl.querySelectorAll('.msg__reaction-picker:not(.hidden)').forEach((p) => p.classList.add('hidden'));
-        if (!isOpen) picker.classList.remove('hidden');
-      });
-      picker.addEventListener('click', (e) => e.stopPropagation());
-      picker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          toggleReaction(doc.id, btn.dataset.emoji, currentUser?.uid);
-          picker.classList.add('hidden');
-        });
+        const alreadyOpen = reactionPickerTargetId === doc.id && !globalReactionPicker.classList.contains('hidden');
+        globalReactionPicker.classList.add('hidden');
+        reactionPickerTargetId = null;
+        if (!alreadyOpen) showReactionPicker(doc.id, e.currentTarget);
       });
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
         pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
@@ -898,7 +927,18 @@
   adminPanel.addEventListener('click', (e) => { if (e.target === adminPanel) adminPanel.classList.add('hidden'); });
 
   document.addEventListener('click', () => {
-    messagesEl.querySelectorAll('.msg__reaction-picker:not(.hidden)').forEach((p) => p.classList.add('hidden'));
+    globalReactionPicker.classList.add('hidden');
+    reactionPickerTargetId = null;
+  });
+  globalReactionPicker.addEventListener('click', (e) => e.stopPropagation());
+  globalReactionPicker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (reactionPickerTargetId) {
+        toggleReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+      }
+      globalReactionPicker.classList.add('hidden');
+      reactionPickerTargetId = null;
+    });
   });
 
   // ── Auth state ────────────────────────────────────────
