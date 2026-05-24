@@ -18,12 +18,20 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isFamilyMember();
       allow create: if isFamilyMember()
-        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'avatar'])
+        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'avatar', 'replyTo'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
         && request.resource.data.createdAt == request.time
         && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
+        && (!('replyTo' in request.resource.data) || (
+          request.resource.data.replyTo is map
+          && request.resource.data.replyTo.keys().hasOnly(['text', 'displayName'])
+          && request.resource.data.replyTo.text is string
+          && request.resource.data.replyTo.text.size() <= 500
+          && request.resource.data.replyTo.displayName is string
+          && request.resource.data.replyTo.displayName.size() <= 50
+        ))
         && (
           // Regular text message
           (

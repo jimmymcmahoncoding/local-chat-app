@@ -73,6 +73,14 @@
     </div>
 
     <div class="composer">
+      <div id="reply-preview" class="reply-preview hidden">
+        <div class="reply-preview__bar"></div>
+        <div class="reply-preview__content">
+          <span id="reply-preview-name" class="reply-preview__name"></span>
+          <span id="reply-preview-text" class="reply-preview__text"></span>
+        </div>
+        <button id="reply-cancel-btn" type="button" class="reply-preview__close" aria-label="Cancel reply">✕</button>
+      </div>
       <form id="message-form">
         <button type="button" id="emoji-btn" class="btn-composer-icon" aria-label="Add emoji"
           title="Add emoji">😊</button>

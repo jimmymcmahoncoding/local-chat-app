@@ -41,12 +41,17 @@
   const gifPanel = document.getElementById('gif-panel');
   const gifSearchInput = document.getElementById('gif-search-input');
   const gifResults = document.getElementById('gif-results');
+  const replyPreview = document.getElementById('reply-preview');
+  const replyPreviewName = document.getElementById('reply-preview-name');
+  const replyPreviewText = document.getElementById('reply-preview-text');
+  const replyCancelBtn = document.getElementById('reply-cancel-btn');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
   let sessionStart = null;
   let currentProfile = { avatar: '😀', displayName: '' };
   let profileSelectedAvatar = '😀';
+  let replyTo = null;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -93,12 +98,23 @@
         ? `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`
         : `<div class="msg__text">${escapeHtml(data.text || '')}</div>`;
 
+      const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
+        ? `<div class="msg__reply">
+            <span class="msg__reply__name">${escapeHtml(String(data.replyTo.displayName || '').slice(0, 50))}</span>
+            <span class="msg__reply__text">${escapeHtml(String(data.replyTo.text || '').slice(0, 120))}</span>
+          </div>`
+        : '';
+
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
 
       if (isOwn) {
         wrapper.innerHTML = `
+          <div class="msg__actions">
+            <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
+          </div>
           <div class="msg__bubble">
+            ${replyBlock}
             ${mediaContent}
             <div class="msg__time">${escapeHtml(time)}</div>
           </div>`;
@@ -112,12 +128,17 @@
           <div class="msg__content">
             <div class="msg__name">${escapeHtml(displayName)}</div>
             <div class="msg__bubble">
+              ${replyBlock}
               ${mediaContent}
               <div class="msg__time">${escapeHtml(time)}</div>
             </div>
+          </div>
+          <div class="msg__actions">
+            <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
           </div>`;
       }
 
+      wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data));
       messagesEl.appendChild(wrapper);
     });
 
@@ -252,15 +273,18 @@
       return;
     }
     try {
-      await db.collection('messages').add({
+      const messageData = {
         text,
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      if (replyTo) messageData.replyTo = replyTo;
+      await db.collection('messages').add(messageData);
       input.value = '';
       messageStatus.textContent = '';
+      clearReply();
     } catch (error) {
       messageStatus.textContent = `Message failed: ${error.message}`;
     }
@@ -351,6 +375,25 @@
     gifPanel.classList.add('hidden');
   }
 
+  function setReply(data) {
+    replyTo = {
+      text: data.type === 'gif' ? '[GIF]' : String(data.text || '').slice(0, 200),
+      displayName: String(data.displayName || 'Family').slice(0, 50),
+    };
+    replyPreviewName.textContent = replyTo.displayName;
+    replyPreviewText.textContent = replyTo.text;
+    replyPreview.classList.remove('hidden');
+    closeAllPickers();
+    input.focus();
+  }
+
+  function clearReply() {
+    replyTo = null;
+    replyPreview.classList.add('hidden');
+  }
+
+  replyCancelBtn.addEventListener('click', clearReply);
+
   let gifSearchTimeout = null;
   let gifOffset = 0;
   let gifHasMore = false;
@@ -421,7 +464,7 @@
     if (!user || !isAllowedEmail(user) || !isValidGiphyUrl(gifUrl)) return;
     closeAllPickers();
     try {
-      await db.collection('messages').add({
+      const gifData = {
         type: 'gif',
         gifUrl,
         text: '[GIF]',
@@ -429,8 +472,11 @@
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      if (replyTo) gifData.replyTo = replyTo;
+      await db.collection('messages').add(gifData);
       messageStatus.textContent = '';
+      clearReply();
     } catch (error) {
       messageStatus.textContent = `Failed to send GIF: ${error.message}`;
     }
