@@ -173,7 +173,7 @@
         const avatarHtml = hasEmojiAvatar
           ? `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(data.avatar)}</div>`
           : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}" aria-hidden="true">${escapeHtml(getInitials(displayName))}</div>`;
-        const bubbleStyle = getBubbleStyle(data.uid || displayName);
+        const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
         wrapper.innerHTML = `
           ${avatarHtml}
           <div class="msg__content">

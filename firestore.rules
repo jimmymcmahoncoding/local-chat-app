@@ -50,7 +50,7 @@ service cloud.firestore {
             && request.resource.data.text == '[GIF]'
           )
           ||
-          // Sticker message
+          // Sticker message (emoji stickers; max size 10 covers multi-codepoint emoji)
           (
             request.resource.data.type == 'sticker'
             && request.resource.data.sticker is string
