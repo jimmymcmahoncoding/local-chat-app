@@ -96,6 +96,18 @@
       </div>
     </header>
 
+    <!-- Message action bar – appears at top of chat when a message is selected -->
+    <div id="msg-action-bar" class="msg-action-bar hidden">
+      <button id="action-bar-close" class="action-bar__close" aria-label="Dismiss selection">✕</button>
+      <span id="action-bar-label" class="action-bar__label">1 selected</span>
+      <div class="action-bar__btns">
+        <button id="action-bar-delete" class="action-bar__btn action-bar__btn--delete hidden" aria-label="Delete">🗑️
+          Delete</button>
+        <button id="action-bar-reply" class="action-bar__btn" aria-label="Reply">↩ Reply</button>
+        <button id="action-bar-react" class="action-bar__btn" aria-label="React">😊 React</button>
+      </div>
+    </div>
+
     <div id="push-section" class="push-banner hidden">
       <p id="push-status"></p>
     </div>

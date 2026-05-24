@@ -47,6 +47,11 @@
   const replyPreviewName = document.getElementById('reply-preview-name');
   const replyPreviewText = document.getElementById('reply-preview-text');
   const replyCancelBtn = document.getElementById('reply-cancel-btn');
+  const msgActionBar = document.getElementById('msg-action-bar');
+  const actionBarClose = document.getElementById('action-bar-close');
+  const actionBarDelete = document.getElementById('action-bar-delete');
+  const actionBarReply = document.getElementById('action-bar-reply');
+  const actionBarReact = document.getElementById('action-bar-react');
   const emailAuthForm = document.getElementById('email-auth-form');
   const emailNameInput = document.getElementById('email-name-input');
   const emailEmailInput = document.getElementById('email-email-input');
@@ -78,6 +83,9 @@
   let isSignUpMode = false;
   let unsubscribePending = null;
   let reactionPickerTargetId = null;
+  let selectedMsgId = null;
+  let selectedMsgData = null;
+  let selectedMsgIsOwn = false;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -131,6 +139,37 @@
     globalReactionPicker.style.top = `${top}px`;
     globalReactionPicker.style.left = `${left}px`;
   }
+
+  function selectMessage(docId, data, isOwn) {
+    const prev = messagesEl.querySelector('.msg--selected');
+    if (prev) prev.classList.remove('msg--selected');
+    if (selectedMsgId === docId) {
+      selectedMsgId = null;
+      selectedMsgData = null;
+      selectedMsgIsOwn = false;
+      msgActionBar.classList.add('hidden');
+      return;
+    }
+    selectedMsgId = docId;
+    selectedMsgData = data;
+    selectedMsgIsOwn = isOwn;
+    const wrapper = messagesEl.querySelector(`[data-message-id="${CSS.escape(docId)}"]`);
+    if (wrapper) wrapper.classList.add('msg--selected');
+    actionBarDelete.classList.toggle('hidden', !isOwn);
+    msgActionBar.classList.remove('hidden');
+  }
+
+  function clearSelection() {
+    const prev = messagesEl.querySelector('.msg--selected');
+    if (prev) prev.classList.remove('msg--selected');
+    selectedMsgId = null;
+    selectedMsgData = null;
+    selectedMsgIsOwn = false;
+    msgActionBar.classList.add('hidden');
+    globalReactionPicker.classList.add('hidden');
+    reactionPickerTargetId = null;
+  }
+
   const BUBBLE_PALETTE = [
     { bg: '#ede9fe', text: '#5b21b6' },
     { bg: '#fce7f3', text: '#9d174d' },
@@ -255,11 +294,6 @@
 
       if (isOwn) {
         wrapper.innerHTML = `
-          <div class="msg__actions">
-            <button class="msg__delete-btn" type="button" aria-label="Delete message">🗑️</button>
-            <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
-            <button class="msg__react-btn" type="button" aria-label="React">😊</button>
-          </div>
           <div class="msg__body">
             <div class="msg__bubble">
               ${replyBlock}
@@ -285,29 +319,23 @@
             </div>
             ${reactionsHtml}
           </div>
-          <div class="msg__actions">
-            <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
-            <button class="msg__react-btn" type="button" aria-label="React">😊</button>
-          </div>`;
+          `;
       }
 
       wrapper.dataset.messageId = doc.id;
-      wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data, doc.id));
-      const deleteBtn = wrapper.querySelector('.msg__delete-btn');
-      if (deleteBtn) deleteBtn.addEventListener('click', () => deleteMessage(doc.id));
+      if (doc.id === selectedMsgId) wrapper.classList.add('msg--selected');
+      wrapper.querySelector('.msg__bubble').addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectMessage(doc.id, data, isOwn);
+      });
       const replyQuote = wrapper.querySelector('.msg__reply');
       if (replyQuote && data.replyTo?.messageId) {
         replyQuote.classList.add('msg__reply--linkable');
-        replyQuote.addEventListener('click', () => scrollToMessage(data.replyTo.messageId));
+        replyQuote.addEventListener('click', (e) => {
+          e.stopPropagation();
+          scrollToMessage(data.replyTo.messageId);
+        });
       }
-
-      wrapper.querySelector('.msg__react-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        const alreadyOpen = reactionPickerTargetId === doc.id && !globalReactionPicker.classList.contains('hidden');
-        globalReactionPicker.classList.add('hidden');
-        reactionPickerTargetId = null;
-        if (!alreadyOpen) showReactionPicker(doc.id, e.currentTarget);
-      });
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
         pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
       });
@@ -927,8 +955,7 @@
   adminPanel.addEventListener('click', (e) => { if (e.target === adminPanel) adminPanel.classList.add('hidden'); });
 
   document.addEventListener('click', () => {
-    globalReactionPicker.classList.add('hidden');
-    reactionPickerTargetId = null;
+    clearSelection();
   });
   globalReactionPicker.addEventListener('click', (e) => e.stopPropagation());
   globalReactionPicker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
@@ -936,9 +963,31 @@
       if (reactionPickerTargetId) {
         toggleReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
       }
-      globalReactionPicker.classList.add('hidden');
-      reactionPickerTargetId = null;
+      clearSelection();
     });
+  });
+
+  actionBarClose.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearSelection();
+  });
+  actionBarDelete.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedMsgId) deleteMessage(selectedMsgId);
+    clearSelection();
+  });
+  actionBarReply.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedMsgData && selectedMsgId) setReply(selectedMsgData, selectedMsgId);
+    clearSelection();
+  });
+  actionBarReact.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!selectedMsgId) return;
+    const alreadyOpen = reactionPickerTargetId === selectedMsgId && !globalReactionPicker.classList.contains('hidden');
+    globalReactionPicker.classList.add('hidden');
+    reactionPickerTargetId = null;
+    if (!alreadyOpen) showReactionPicker(selectedMsgId, e.currentTarget);
   });
 
   // ── Auth state ────────────────────────────────────────
