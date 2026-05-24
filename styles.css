@@ -839,7 +839,104 @@ emoji-picker {
   background: #f3f4f6;
 }
 
-/* ── Reply button on messages ───────────────────────────── */
+/* ── Delete button on own messages ──────────────────────── */
+.msg__delete-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.msg__delete-btn:hover {
+  background: #fee2e2;
+  color: var(--error);
+}
+
+/* ── Sticker message ─────────────────────────────────────── */
+.msg__sticker {
+  font-size: 2.75rem;
+  line-height: 1;
+  padding: 0.1rem 0;
+  display: block;
+}
+
+/* ── Sticker picker panel ────────────────────────────────── */
+.sticker-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sticker-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.sticker-tab {
+  flex-shrink: 0;
+  padding: 0.3rem 0.6rem;
+  border: 1.5px solid var(--border);
+  border-radius: 50px;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.sticker-tab:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sticker-tab--active {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+}
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 0.25rem;
+  padding: 0.5rem;
+  height: 180px;
+  overflow-y: auto;
+  background: var(--page-bg);
+}
+
+.sticker-item {
+  font-size: 2rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.3rem;
+  line-height: 1;
+  text-align: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.sticker-item:hover {
+  background: var(--border);
+  transform: scale(1.15);
+}
+
+@media (max-height: 620px) {
+  .sticker-grid {
+    height: 120px;
+  }
+}
 .msg__actions {
   display: flex;
   align-items: center;

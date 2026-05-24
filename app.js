@@ -39,8 +39,12 @@
   const input = document.getElementById('message-input');
   const emojiBtn = document.getElementById('emoji-btn');
   const gifBtn = document.getElementById('gif-btn');
+  const stickerBtn = document.getElementById('sticker-btn');
   const emojiPanel = document.getElementById('emoji-panel');
   const gifPanel = document.getElementById('gif-panel');
+  const stickerPanel = document.getElementById('sticker-panel');
+  const stickerTabs = document.getElementById('sticker-tabs');
+  const stickerGrid = document.getElementById('sticker-grid');
   const gifSearchInput = document.getElementById('gif-search-input');
   const gifResults = document.getElementById('gif-results');
   const replyPreview = document.getElementById('reply-preview');
@@ -63,6 +67,37 @@
     '⚽', '🎸', '🍕', '🚀', '🦄',
   ];
 
+  // Pastel bubble colours for other users (background, text)
+  const BUBBLE_PALETTE = [
+    { bg: '#ede9fe', text: '#5b21b6' },
+    { bg: '#fce7f3', text: '#9d174d' },
+    { bg: '#fef3c7', text: '#92400e' },
+    { bg: '#d1fae5', text: '#065f46' },
+    { bg: '#dbeafe', text: '#1e40af' },
+    { bg: '#fee2e2', text: '#991b1b' },
+    { bg: '#ccfbf1', text: '#134e4a' },
+    { bg: '#ffedd5', text: '#9a3412' },
+  ];
+
+  const STICKER_PACKS = [
+    {
+      name: '🐾 Animals',
+      stickers: ['🐶', '🐱', '🐻', '🐼', '🦊', '🐨', '🐯', '🦁', '🐸', '🐧', '🦋', '🐢', '🦄', '🐲', '🐬'],
+    },
+    {
+      name: '🍕 Food',
+      stickers: ['🍕', '🍔', '🌮', '🍦', '🍩', '🎂', '🍓', '🍇', '🍉', '🍭', '🍿', '🧁', '🍜', '🍣', '🥐'],
+    },
+    {
+      name: '🎉 Fun',
+      stickers: ['🎉', '🎊', '🎈', '🎮', '🎸', '🎯', '🏆', '🚀', '⭐', '🌈', '🎨', '🎪', '🔥', '💥', '✨'],
+    },
+    {
+      name: '😀 Faces',
+      stickers: ['😀', '😂', '😍', '🥳', '😎', '🤩', '😜', '🥺', '😴', '🤗', '😇', '🤣', '😅', '🤔', '🫶'],
+    },
+  ];
+
   function getInitials(name) {
     return String(name || 'F')
       .split(' ')
@@ -76,6 +111,13 @@
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  }
+
+  function getBubbleStyle(uid) {
+    let hash = 0;
+    for (let i = 0; i < uid.length; i++) hash = uid.charCodeAt(i) + ((hash << 5) - hash);
+    const { bg, text } = BUBBLE_PALETTE[Math.abs(hash) % BUBBLE_PALETTE.length];
+    return `background:${bg};color:${text};`;
   }
 
   function renderMessages(snapshot, currentUser) {
@@ -96,9 +138,14 @@
         : '';
 
       const gifUrl = data.type === 'gif' && isValidGiphyUrl(data.gifUrl || '') ? data.gifUrl : null;
-      const mediaContent = gifUrl
-        ? `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`
-        : `<div class="msg__text">${escapeHtml(data.text || '')}</div>`;
+      let mediaContent;
+      if (gifUrl) {
+        mediaContent = `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`;
+      } else if (data.type === 'sticker') {
+        mediaContent = `<div class="msg__sticker" aria-label="Sticker">${escapeHtml(data.sticker || '')}</div>`;
+      } else {
+        mediaContent = `<div class="msg__text">${escapeHtml(data.text || '')}</div>`;
+      }
 
       const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
         ? `<div class="msg__reply">
@@ -113,6 +160,7 @@
       if (isOwn) {
         wrapper.innerHTML = `
           <div class="msg__actions">
+            <button class="msg__delete-btn" type="button" aria-label="Delete message">🗑️</button>
             <button class="msg__reply-btn" type="button" aria-label="Reply">↩</button>
           </div>
           <div class="msg__bubble">
@@ -125,11 +173,12 @@
         const avatarHtml = hasEmojiAvatar
           ? `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(data.avatar)}</div>`
           : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}" aria-hidden="true">${escapeHtml(getInitials(displayName))}</div>`;
+        const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
         wrapper.innerHTML = `
           ${avatarHtml}
           <div class="msg__content">
             <div class="msg__name">${escapeHtml(displayName)}</div>
-            <div class="msg__bubble">
+            <div class="msg__bubble" style="${bubbleStyle}">
               ${replyBlock}
               ${mediaContent}
               <div class="msg__time">${escapeHtml(time)}</div>
@@ -142,6 +191,10 @@
 
       wrapper.dataset.messageId = doc.id;
       wrapper.querySelector('.msg__reply-btn').addEventListener('click', () => setReply(data, doc.id));
+      const deleteBtn = wrapper.querySelector('.msg__delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => deleteMessage(doc.id));
+      }
       const replyQuote = wrapper.querySelector('.msg__reply');
       if (replyQuote && data.replyTo?.messageId) {
         replyQuote.classList.add('msg__reply--linkable');
@@ -151,6 +204,15 @@
     });
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function deleteMessage(docId) {
+    if (!confirm('Delete this message?')) return;
+    try {
+      await db.collection('messages').doc(docId).delete();
+    } catch (err) {
+      messageStatus.textContent = `Delete failed: ${err.message}`;
+    }
   }
 
   function escapeHtml(value) {
@@ -384,11 +446,76 @@
   function closeAllPickers() {
     emojiPanel.classList.add('hidden');
     gifPanel.classList.add('hidden');
+    stickerPanel.classList.add('hidden');
   }
 
+  // ── Sticker panel ───────────────────────────────────────
+  let activeStickerPack = 0;
+
+  function renderStickerPanel() {
+    stickerTabs.innerHTML = '';
+    STICKER_PACKS.forEach((pack, i) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'sticker-tab' + (i === activeStickerPack ? ' sticker-tab--active' : '');
+      tab.textContent = pack.name;
+      tab.addEventListener('click', () => {
+        activeStickerPack = i;
+        renderStickerPanel();
+      });
+      stickerTabs.appendChild(tab);
+    });
+    stickerGrid.innerHTML = '';
+    STICKER_PACKS[activeStickerPack].stickers.forEach((sticker) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sticker-item';
+      btn.textContent = sticker;
+      btn.setAttribute('aria-label', sticker);
+      btn.addEventListener('click', () => sendSticker(sticker));
+      stickerGrid.appendChild(btn);
+    });
+  }
+
+  async function sendSticker(sticker) {
+    const user = auth.currentUser;
+    if (!user || !isAllowedEmail(user)) return;
+    closeAllPickers();
+    try {
+      const stickerData = {
+        type: 'sticker',
+        sticker,
+        text: '[Sticker]',
+        uid: user.uid,
+        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+        avatar: currentProfile.avatar,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (replyTo) stickerData.replyTo = replyTo;
+      await db.collection('messages').add(stickerData);
+      messageStatus.textContent = '';
+      clearReply();
+    } catch (error) {
+      messageStatus.textContent = `Failed to send sticker: ${error.message}`;
+    }
+  }
+
+  stickerBtn.addEventListener('click', () => {
+    const wasHidden = stickerPanel.classList.contains('hidden');
+    closeAllPickers();
+    if (wasHidden) {
+      renderStickerPanel();
+      stickerPanel.classList.remove('hidden');
+    }
+  });
+
   function setReply(data, docId) {
+    let replyText;
+    if (data.type === 'gif') replyText = '[GIF]';
+    else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
+    else replyText = String(data.text || '').slice(0, 200);
     replyTo = {
-      text: data.type === 'gif' ? '[GIF]' : String(data.text || '').slice(0, 200),
+      text: replyText,
       displayName: String(data.displayName || 'Family').slice(0, 50),
       messageId: docId,
     };

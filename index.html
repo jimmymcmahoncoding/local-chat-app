@@ -80,6 +80,10 @@
         <button type="button">Load more</button>
       </div>
     </div>
+    <div id="sticker-panel" class="picker-panel hidden">
+      <div id="sticker-tabs" class="sticker-tabs"></div>
+      <div id="sticker-grid" class="sticker-grid"></div>
+    </div>
 
     <div class="composer">
       <div id="reply-preview" class="reply-preview hidden">
@@ -95,6 +99,8 @@
           title="Add emoji">😊</button>
         <button type="button" id="gif-btn" class="btn-composer-gif" aria-label="Send a GIF"
           title="Send a GIF">GIF</button>
+        <button type="button" id="sticker-btn" class="btn-composer-icon" aria-label="Send a sticker"
+          title="Send a sticker">🎭</button>
         <input id="message-input" type="text" maxlength="500" placeholder="Type a message…" required
           autocomplete="off" />
         <button type="submit" class="btn-send" aria-label="Send message">
