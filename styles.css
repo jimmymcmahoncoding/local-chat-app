@@ -1493,3 +1493,126 @@ emoji-picker {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Voice record button ─────────────────────────────────── */
+.btn-voice svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Voice recording UI (replaces composer form while active) ── */
+.voice-recording-ui {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.voice-cancel-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.voice-cancel-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: var(--error);
+}
+
+.voice-recording-indicator {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.voice-recording-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--error);
+  animation: voice-dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-dot-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+.voice-timer {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--other-text);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5rem;
+}
+
+.voice-recording-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-send-btn {
+  flex-shrink: 0;
+  padding: 0 1.1rem;
+  height: 36px;
+  border-radius: 50px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.voice-send-btn:hover {
+  background: var(--primary-dark);
+}
+
+/* ── Voice message bubble ────────────────────────────────── */
+.msg__voice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.msg__audio {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  height: 36px;
+}
+
+.msg__voice-duration {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  text-align: right;
+}

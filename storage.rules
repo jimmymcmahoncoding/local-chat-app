@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /voice-messages/{userId}/{fileName} {
+      // Any signed-in user can download voice messages
+      allow read: if request.auth != null;
+      // Only the owner can upload; max 10 MB; must be audio
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+      // Only the owner can delete their own recordings
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

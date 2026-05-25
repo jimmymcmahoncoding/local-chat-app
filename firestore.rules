@@ -41,7 +41,7 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isAllowed();
       allow create: if isAllowed()
-        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'replyTo'])
+        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'replyTo', 'audioUrl', 'duration'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
@@ -77,6 +77,17 @@ service cloud.firestore {
             && request.resource.data.sticker.size() > 0
             && request.resource.data.sticker.size() <= 10
             && request.resource.data.text == '[Sticker]'
+          )
+          ||
+          (
+            request.resource.data.type == 'voice'
+            && request.resource.data.audioUrl is string
+            && request.resource.data.audioUrl.size() > 0
+            && request.resource.data.audioUrl.size() <= 1024
+            && request.resource.data.duration is number
+            && request.resource.data.duration >= 0
+            && request.resource.data.duration <= 300
+            && request.resource.data.text == '[Voice message]'
           )
         );
       allow delete: if isAllowed() && resource.data.uid == request.auth.uid;

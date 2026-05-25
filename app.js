@@ -9,6 +9,7 @@
 
   const auth = firebase.auth();
   const db = firebase.firestore();
+  const storage = firebase.storage();
   const provider = new firebase.auth.GoogleAuthProvider();
   const microsoftProvider = new firebase.auth.OAuthProvider('microsoft.com');
   const notificationsSupported = 'Notification' in window;
@@ -73,6 +74,12 @@
   const adminPanel = document.getElementById('admin-panel');
   const adminPanelList = document.getElementById('admin-panel-list');
   const adminPanelCloseBtn = document.getElementById('admin-panel-close-btn');
+  const voiceBtn = document.getElementById('voice-btn');
+  const sendBtn = form.querySelector('.btn-send');
+  const voiceRecordingUi = document.getElementById('voice-recording-ui');
+  const voiceTimer = document.getElementById('voice-timer');
+  const voiceCancelBtn = document.getElementById('voice-cancel-btn');
+  const voiceSendBtn = document.getElementById('voice-send-btn');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -88,6 +95,13 @@
   let selectedMsgId = null;
   let selectedMsgData = null;
   let selectedMsgIsOwn = false;
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let recordingStartTime = null;
+  let recordingTimerInterval = null;
+  let recordingStream = null;
+  const MAX_RECORDING_SECONDS = 120;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -278,6 +292,12 @@
         mediaContent = `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`;
       } else if (data.type === 'sticker') {
         mediaContent = `<div class="msg__sticker" aria-label="Sticker">${escapeHtml(data.sticker || '')}</div>`;
+      } else if (data.type === 'voice') {
+        const safeAudioUrl = isValidStorageUrl(data.audioUrl || '') ? data.audioUrl : '';
+        const dur = typeof data.duration === 'number' ? formatDuration(data.duration) : '';
+        mediaContent = safeAudioUrl
+          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeAudioUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
+          : `<div class="msg__text">[Voice message]</div>`;
       } else {
         mediaContent = `<div class="msg__text">${escapeHtml(data.text || '')}</div>`;
       }
@@ -483,7 +503,9 @@
         if (message.uid === signedInUser.uid && isActiveWindow) return;
 
         const sender = message.displayName || 'Family';
-        const body = String(message.text || '').trim() || 'New message received';
+        const body = message.type === 'voice'
+          ? '🎤 Voice message'
+          : String(message.text || '').trim() || 'New message received';
         showNotification(`${sender} sent a message`, body);
       });
   }
@@ -529,6 +551,7 @@
       await db.collection('messages').add(messageData);
       input.value = '';
       input.style.height = 'auto';
+      updateVoiceBtnVisibility();
       messageStatus.textContent = '';
       clearReply();
     } catch (error) {
@@ -539,6 +562,7 @@
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
+    updateVoiceBtnVisibility();
   });
 
   input.addEventListener('keydown', (e) => {
@@ -708,6 +732,7 @@
     let replyText;
     if (data.type === 'gif') replyText = '[GIF]';
     else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
+    else if (data.type === 'voice') replyText = '[Voice message 🎤]';
     else replyText = String(data.text || '').slice(0, 200);
     replyTo = {
       text: replyText,
@@ -1018,10 +1043,148 @@
     if (!alreadyOpen) showReactionPicker(selectedMsgId, e.currentTarget);
   });
 
+  // ── Voice messages ────────────────────────────────────
+  const voiceSupported = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  if (!voiceSupported) voiceBtn.classList.add('hidden');
+
+  function getSupportedMimeType() {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+  }
+
+  function formatDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function isValidStorageUrl(url) {
+    try {
+      const u = new URL(url);
+      return u.hostname === 'firebasestorage.googleapis.com';
+    } catch {
+      return false;
+    }
+  }
+
+  function updateVoiceBtnVisibility() {
+    if (!voiceSupported) return;
+    const hasText = input.value.trim().length > 0;
+    voiceBtn.classList.toggle('hidden', hasText);
+    sendBtn.classList.toggle('hidden', !hasText);
+  }
+
+  function showRecordingUI() {
+    form.classList.add('hidden');
+    voiceRecordingUi.classList.remove('hidden');
+  }
+
+  function hideRecordingUI() {
+    voiceRecordingUi.classList.add('hidden');
+    form.classList.remove('hidden');
+    updateVoiceBtnVisibility();
+  }
+
+  async function startRecording() {
+    if (!cachedIsAllowed || !voiceSupported) return;
+    try {
+      closeAllPickers();
+      recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getSupportedMimeType();
+      const options = mimeType ? { mimeType } : {};
+      mediaRecorder = new MediaRecorder(recordingStream, options);
+      audioChunks = [];
+      mediaRecorder.addEventListener('dataavailable', (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      });
+      mediaRecorder.start(100);
+      recordingStartTime = Date.now();
+      showRecordingUI();
+      voiceTimer.textContent = '0:00';
+      let elapsed = 0;
+      recordingTimerInterval = setInterval(() => {
+        elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+        voiceTimer.textContent = formatDuration(elapsed);
+        if (elapsed >= MAX_RECORDING_SECONDS) stopAndSendRecording();
+      }, 500);
+    } catch (err) {
+      const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+      messageStatus.textContent = denied ? 'Microphone access denied.' : 'Could not access microphone.';
+    }
+  }
+
+  function cleanupRecording() {
+    if (recordingTimerInterval) { clearInterval(recordingTimerInterval); recordingTimerInterval = null; }
+    if (recordingStream) { recordingStream.getTracks().forEach((t) => t.stop()); recordingStream = null; }
+    mediaRecorder = null;
+    audioChunks = [];
+    hideRecordingUI();
+  }
+
+  function cancelRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    cleanupRecording();
+  }
+
+  async function stopAndSendRecording() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    return new Promise((resolve) => {
+      mediaRecorder.addEventListener('stop', async () => {
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const duration = Math.round((Date.now() - recordingStartTime) / 1000);
+        const blob = new Blob(audioChunks, { type: mimeType });
+        cleanupRecording();
+        if (blob.size > 0) await sendVoiceMessage(blob, duration, mimeType);
+        resolve();
+      }, { once: true });
+      mediaRecorder.stop();
+    });
+  }
+
+  async function sendVoiceMessage(blob, duration, mimeType) {
+    const user = auth.currentUser;
+    if (!user || !cachedIsAllowed) return;
+    const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+    const fileName = `${Date.now()}.${ext}`;
+    const storageRef = storage.ref(`voice-messages/${user.uid}/${fileName}`);
+    messageStatus.textContent = 'Sending…';
+    try {
+      const snapshot = await storageRef.put(blob, { contentType: mimeType });
+      const audioUrl = await snapshot.ref.getDownloadURL();
+      const voiceData = {
+        type: 'voice',
+        audioUrl,
+        duration,
+        text: '[Voice message]',
+        uid: user.uid,
+        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+        avatar: currentProfile.avatar,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+      if (replyTo) voiceData.replyTo = replyTo;
+      await db.collection('messages').add(voiceData);
+      messageStatus.textContent = '';
+      clearReply();
+    } catch (err) {
+      messageStatus.textContent = `Voice message failed: ${err.message}`;
+    }
+  }
+
+  voiceBtn.addEventListener('click', startRecording);
+  voiceCancelBtn.addEventListener('click', cancelRecording);
+  voiceSendBtn.addEventListener('click', stopAndSendRecording);
+  updateVoiceBtnVisibility();
+
   // ── Auth state ────────────────────────────────────────
   auth.onAuthStateChanged(async (user) => {
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePending) { unsubscribePending(); unsubscribePending = null; }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
     cachedIsAllowed = false;
     cachedIsAdmin = false;
     adminBtn.classList.add('hidden');
@@ -1050,6 +1213,7 @@
     sessionStart = new Date();
     showUI('chat');
     updatePushButtonState();
+    updateVoiceBtnVisibility();
     if (Notification.permission === 'granted') {
       registerNotificationSW();
     }
