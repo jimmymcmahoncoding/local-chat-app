@@ -370,6 +370,8 @@ body {
 
 .msg__text {
   font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .msg__time {

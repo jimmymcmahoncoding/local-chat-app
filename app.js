@@ -1069,7 +1069,7 @@
     unsubscribeMessages = db
       .collection('messages')
       .orderBy('createdAt', 'asc')
-      .limit(100)
+      .limitToLast(100)
       .onSnapshot((snapshot) => {
         renderMessages(snapshot, user);
         notifyForNewMessages(snapshot, user);
