@@ -62,6 +62,7 @@
   const signinModeBtn = document.getElementById('signin-mode-btn');
   const signupToggleFwd = document.querySelector('.signin-mode-toggle--fwd');
   const signupToggleBack = document.querySelector('.signin-mode-toggle--back');
+  const authLoadingCard = document.getElementById('auth-loading-card');
   const signinCard = document.getElementById('signin-card');
   const pendingCard = document.getElementById('pending-card');
   const pendingEmailDisplay = document.getElementById('pending-email-display');
@@ -375,6 +376,7 @@
 
   function showUI(screen) {
     // screen: 'signin' | 'pending' | 'chat'
+    authLoadingCard.classList.add('hidden');
     const isChat = screen === 'chat';
     chatSection.classList.toggle('hidden', !isChat);
     signinScreen.classList.toggle('hidden', isChat);

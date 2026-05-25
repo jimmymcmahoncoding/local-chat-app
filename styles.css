@@ -84,6 +84,22 @@ body {
   margin-bottom: 2rem;
 }
 
+.auth-loading-spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid #e0e7ff;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: auth-spin 0.7s linear infinite;
+  margin: 1.75rem auto 0;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .btn-google {
   display: inline-flex;
   align-items: center;
