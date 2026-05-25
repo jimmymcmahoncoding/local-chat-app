@@ -390,20 +390,25 @@ body {
 #message-form {
   display: flex;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-end;
 }
 
 #message-input {
   flex: 1;
   padding: 0.6rem 1rem;
   border: 1.5px solid var(--border);
-  border-radius: 50px;
+  border-radius: 18px;
   font-size: 0.9rem;
   font-family: inherit;
+  line-height: 1.45;
   outline: none;
   background: var(--page-bg);
   transition: border-color 0.15s, background 0.15s;
   min-width: 0;
+  resize: none;
+  overflow-y: auto;
+  max-height: 8rem;
+  display: block;
 }
 
 #message-input:focus {

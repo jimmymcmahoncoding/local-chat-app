@@ -527,10 +527,23 @@
       if (replyTo) messageData.replyTo = replyTo;
       await db.collection('messages').add(messageData);
       input.value = '';
+      input.style.height = 'auto';
       messageStatus.textContent = '';
       clearReply();
     } catch (error) {
       messageStatus.textContent = `Message failed: ${error.message}`;
+    }
+  });
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
     }
   });
 
@@ -840,6 +853,8 @@
     const end = input.selectionEnd ?? input.value.length;
     input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
     input.setSelectionRange(start + emoji.length, start + emoji.length);
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
   });
 
   // ── Email auth toggle ──────────────────────────────────
