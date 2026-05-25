@@ -1,1 +1,4 @@
 firebase-config.js
+functions/node_modules
+firebase-debug.log
+
