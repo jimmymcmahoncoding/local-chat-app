@@ -6,61 +6,61 @@ const { getMessaging } = require('firebase-admin/messaging');
 initializeApp();
 
 exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', async (event) => {
-  const data = event.data.data();
-  if (!data) return;
+    const data = event.data.data();
+    if (!data) return;
 
-  const senderUid = data.uid;
-  const senderName = String(data.displayName || 'Family').slice(0, 50);
+    const senderUid = data.uid;
+    const senderName = String(data.displayName || 'Family').slice(0, 50);
 
-  let body;
-  if (data.type === 'voice') body = '🎤 Voice message';
-  else if (data.type === 'gif') body = '🖼️ GIF';
-  else if (data.type === 'sticker') body = `${data.sticker || '🎭'} Sticker`;
-  else body = String(data.text || '').trim().slice(0, 200) || 'New message';
+    let body;
+    if (data.type === 'voice') body = '🎤 Voice message';
+    else if (data.type === 'gif') body = '🖼️ GIF';
+    else if (data.type === 'sticker') body = `${data.sticker || '🎭'} Sticker`;
+    else body = String(data.text || '').trim().slice(0, 200) || 'New message';
 
-  const db = getFirestore();
-  const tokensSnap = await db.collection('fcmTokens').get();
-  if (tokensSnap.empty) return;
+    const db = getFirestore();
+    const tokensSnap = await db.collection('fcmTokens').get();
+    if (tokensSnap.empty) return;
 
-  const tokens = [];
-  const docIds = [];
-  tokensSnap.docs.forEach((doc) => {
-    if (doc.id !== senderUid && doc.data().token) {
-      tokens.push(doc.data().token);
-      docIds.push(doc.id);
-    }
-  });
-  if (!tokens.length) return;
+    const tokens = [];
+    const docIds = [];
+    tokensSnap.docs.forEach((doc) => {
+        if (doc.id !== senderUid && doc.data().token) {
+            tokens.push(doc.data().token);
+            docIds.push(doc.id);
+        }
+    });
+    if (!tokens.length) return;
 
-  const response = await getMessaging().sendEachForMulticast({
-    tokens,
-    notification: {
-      title: `${senderName} sent a message`,
-      body,
-    },
-    webpush: {
-      notification: {
-        icon: '/favicon.svg',
-        badge: '/favicon.svg',
-      },
-      fcmOptions: { link: '/' },
-    },
-  });
+    const response = await getMessaging().sendEachForMulticast({
+        tokens,
+        notification: {
+            title: `${senderName} sent a message`,
+            body,
+        },
+        webpush: {
+            notification: {
+                icon: '/favicon.svg',
+                badge: '/favicon.svg',
+            },
+            fcmOptions: { link: '/' },
+        },
+    });
 
-  // Remove stale or invalid tokens
-  const batch = db.batch();
-  let hasDeletions = false;
-  response.responses.forEach((resp, i) => {
-    if (!resp.success) {
-      const code = resp.error?.code;
-      if (
-        code === 'messaging/invalid-registration-token' ||
-        code === 'messaging/registration-token-not-registered'
-      ) {
-        batch.delete(db.collection('fcmTokens').doc(docIds[i]));
-        hasDeletions = true;
-      }
-    }
-  });
-  if (hasDeletions) await batch.commit();
+    // Remove stale or invalid tokens
+    const batch = db.batch();
+    let hasDeletions = false;
+    response.responses.forEach((resp, i) => {
+        if (!resp.success) {
+            const code = resp.error?.code;
+            if (
+                code === 'messaging/invalid-registration-token' ||
+                code === 'messaging/registration-token-not-registered'
+            ) {
+                batch.delete(db.collection('fcmTokens').doc(docIds[i]));
+                hasDeletions = true;
+            }
+        }
+    });
+    if (hasDeletions) await batch.commit();
 });
