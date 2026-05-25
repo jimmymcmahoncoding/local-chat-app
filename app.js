@@ -1139,9 +1139,12 @@
     if (!vapidKey || !messaging) return;
     if (Notification.permission !== 'granted') return;
     try {
-      // Delete any existing token first to force a fresh push subscription.
-      // This ensures VAPID key changes are picked up correctly.
-      try { await messaging.deleteToken(); } catch { /* no existing token */ }
+      // Force a fresh push subscription by unsubscribing at the browser level.
+      // This ensures any stale subscription (e.g. from a previous VAPID key) is cleared.
+      try {
+        const existingSub = await swRegistration.pushManager.getSubscription();
+        if (existingSub) await existingSub.unsubscribe();
+      } catch { /* ignore */ }
       const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: swRegistration });
       if (token) {
         await db.collection('fcmTokens').doc(uid).set({
