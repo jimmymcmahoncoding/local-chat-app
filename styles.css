@@ -406,7 +406,7 @@ body {
   transition: border-color 0.15s, background 0.15s;
   min-width: 0;
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
   max-height: 8rem;
   display: block;
 }

@@ -36,6 +36,7 @@
   const emojiBtn = document.getElementById('emoji-btn');
   const gifBtn = document.getElementById('gif-btn');
   const stickerBtn = document.getElementById('sticker-btn');
+  const newlineBtn = document.getElementById('newline-btn');
   const emojiPanel = document.getElementById('emoji-panel');
   const gifPanel = document.getElementById('gif-panel');
   const stickerPanel = document.getElementById('sticker-panel');
@@ -545,6 +546,16 @@
       e.preventDefault();
       form.requestSubmit();
     }
+  });
+
+  newlineBtn.addEventListener('click', () => {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + '\n' + input.value.slice(end);
+    input.setSelectionRange(start + 1, start + 1);
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+    input.focus();
   });
 
   // ── Profile management ──────────────────────────────────
