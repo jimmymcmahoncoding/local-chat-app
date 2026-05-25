@@ -55,9 +55,11 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     response.responses.forEach((resp, i) => {
         if (!resp.success) {
             const code = resp.error?.code;
+            console.log(`Token failure [${i}] code: ${code}, message: ${resp.error?.message}`);
             if (
                 code === 'messaging/invalid-registration-token' ||
-                code === 'messaging/registration-token-not-registered'
+                code === 'messaging/registration-token-not-registered' ||
+                code === 'messaging/third-party-auth-error'
             ) {
                 batch.delete(db.collection('fcmTokens').doc(docIds[i]));
                 hasDeletions = true;
