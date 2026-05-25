@@ -279,6 +279,27 @@ body {
   font-size: 0.82rem;
   color: var(--warn-text);
   line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.push-enable-btn {
+  flex-shrink: 0;
+  padding: 0.3rem 0.75rem;
+  border: 1.5px solid var(--warn-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warn-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.push-enable-btn:hover {
+  background: var(--warn-border);
 }
 
 /* ── Messages area ───────────────────────────────────────── */

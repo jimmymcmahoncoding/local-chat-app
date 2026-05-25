@@ -27,6 +27,7 @@
   const signinScreen = document.getElementById('signin-screen');
   const userNameEl = document.getElementById('user-name');
   const pushStatus = document.getElementById('push-status');
+  const pushEnableBtn = document.getElementById('push-enable-btn');
   const profileBtn = document.getElementById('profile-btn');
   const userAvatarEl = document.getElementById('user-avatar');
   const profileModal = document.getElementById('profile-modal');
@@ -502,13 +503,20 @@
   function updatePushButtonState() {
     if (!notificationsSupported) {
       pushStatus.textContent = 'Notifications are not supported in this browser.';
+      pushEnableBtn.classList.add('hidden');
       pushSection.classList.remove('hidden');
       return;
     }
     if (Notification.permission === 'granted') {
       pushSection.classList.add('hidden');
+      pushEnableBtn.classList.add('hidden');
     } else if (Notification.permission === 'denied') {
       pushStatus.textContent = 'Notifications blocked. Enable them in your browser or OS settings.';
+      pushEnableBtn.classList.add('hidden');
+      pushSection.classList.remove('hidden');
+    } else {
+      pushStatus.textContent = '';
+      pushEnableBtn.classList.remove('hidden');
       pushSection.classList.remove('hidden');
     }
   }
@@ -1129,6 +1137,7 @@
     }
     const vapidKey = (FAMILY_CHAT_CONFIG.vapidPublicKey || '').trim();
     if (!vapidKey || !messaging) return;
+    if (Notification.permission !== 'granted') return;
     try {
       const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: swRegistration });
       if (token) {
@@ -1141,6 +1150,14 @@
       console.warn('FCM token registration failed:', err);
     }
   }
+
+  pushEnableBtn.addEventListener('click', async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const permission = await Notification.requestPermission().catch(() => 'denied');
+    updatePushButtonState();
+    if (permission === 'granted') await setupFCM(uid);
+  });
 
   // ── Voice messages ────────────────────────────────────
   const voiceSupported = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
