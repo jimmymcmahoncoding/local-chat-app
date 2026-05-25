@@ -1616,3 +1616,31 @@ emoji-picker {
   opacity: 0.65;
   text-align: right;
 }
+
+/* ── Read receipts (seenBy) ─────────────────────────────── */
+.msg__seen {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 2px 4px 0;
+}
+
+.msg__seen-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e7eb;
+  color: #374151;
+  font-weight: 600;
+  line-height: 1;
+  cursor: default;
+}
+
+.msg__seen-avatar--emoji {
+  background: transparent;
+  font-size: 13px;
+}

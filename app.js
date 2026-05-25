@@ -10,6 +10,10 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
   const storage = firebase.storage();
+  let messaging = null;
+  if ('serviceWorker' in navigator && 'PushManager' in window) {
+    try { messaging = firebase.messaging(); } catch { /* FCM not supported */ }
+  }
   const provider = new firebase.auth.GoogleAuthProvider();
   const microsoftProvider = new firebase.auth.OAuthProvider('microsoft.com');
   const notificationsSupported = 'Notification' in window;
@@ -102,6 +106,12 @@
   let recordingTimerInterval = null;
   let recordingStream = null;
   const MAX_RECORDING_SECONDS = 120;
+
+  const profilesCache = new Map();
+  let unsubscribeProfiles = null;
+  let seenObserver = null;
+  const pendingSeenUpdates = new Set();
+  let seenFlushTimeout = null;
 
   const AVATAR_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
   const AVATAR_OPTIONS = [
@@ -311,6 +321,25 @@
 
       const reactionsHtml = buildReactionsBar(data.reactions, currentUser?.uid);
 
+      // Build seenBy avatars row (own messages only)
+      let seenHtml = '';
+      if (isOwn) {
+        const seenByMap = data.seenBy || {};
+        const viewerUids = Object.keys(seenByMap).filter((uid) => uid !== data.uid);
+        if (viewerUids.length > 0) {
+          const avatars = viewerUids.slice(0, 5).map((uid) => {
+            const profile = profilesCache.get(uid);
+            const av = profile?.avatar;
+            const name = escapeHtml(String(profile?.displayName || '').slice(0, 30));
+            if (av && AVATAR_OPTIONS.includes(av)) {
+              return `<span class="msg__seen-avatar msg__seen-avatar--emoji" title="${name}">${escapeHtml(av)}</span>`;
+            }
+            return `<span class="msg__seen-avatar" style="background:${getAvatarColor(name || uid)}" title="${name}">${escapeHtml(getInitials(name || uid))}</span>`;
+          }).join('');
+          seenHtml = `<div class="msg__seen" aria-label="Seen">${avatars}</div>`;
+        }
+      }
+
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
 
@@ -323,6 +352,7 @@
               <div class="msg__time">${escapeHtml(time)}</div>
             </div>
             ${reactionsHtml}
+            ${seenHtml}
           </div>`;
       } else {
         const hasEmojiAvatar = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
@@ -345,6 +375,8 @@
       }
 
       wrapper.dataset.messageId = doc.id;
+      wrapper.dataset.senderUid = data.uid || '';
+      wrapper.dataset.seenBy = JSON.stringify(data.seenBy || {});
       if (doc.id === selectedMsgId) wrapper.classList.add('msg--selected');
       wrapper.querySelector('.msg__bubble').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -365,6 +397,7 @@
       messagesEl.appendChild(wrapper);
     });
 
+    if (currentUser) observeMessagesForSeen(currentUser.uid);
     if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
@@ -525,7 +558,12 @@
   signInMsBtn.addEventListener('click', () => handleSignIn(microsoftProvider));
 
   signOutBtn.addEventListener('click', async () => {
+    const uid = auth.currentUser?.uid;
     try {
+      if (uid) {
+        if (messaging) { try { await messaging.deleteToken(); } catch { /* ignore */ } }
+        try { await db.collection('fcmTokens').doc(uid).delete(); } catch { /* ignore */ }
+      }
       await auth.signOut();
     } catch (error) {
       authStatus.textContent = `Sign-out failed: ${error.message}`;
@@ -1043,6 +1081,67 @@
     if (!alreadyOpen) showReactionPicker(selectedMsgId, e.currentTarget);
   });
 
+  // ── Read receipts (seenBy) ────────────────────────────
+  function flushSeenUpdates() {
+    if (!pendingSeenUpdates.size) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const batch = db.batch();
+    pendingSeenUpdates.forEach((msgId) => {
+      batch.update(db.collection('messages').doc(msgId), { [`seenBy.${uid}`]: true });
+    });
+    pendingSeenUpdates.clear();
+    batch.commit().catch((err) => console.warn('seenBy batch failed:', err));
+  }
+
+  function observeMessagesForSeen(currentUid) {
+    if (seenObserver) seenObserver.disconnect();
+    seenObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const el = entry.target;
+        const msgId = el.dataset.messageId;
+        const senderUid = el.dataset.senderUid;
+        if (!msgId || senderUid === currentUid) return;
+        try {
+          const seen = JSON.parse(el.dataset.seenBy || '{}');
+          if (seen[currentUid]) { seenObserver.unobserve(el); return; }
+        } catch { /* ignore */ }
+        pendingSeenUpdates.add(msgId);
+        seenObserver.unobserve(el);
+        clearTimeout(seenFlushTimeout);
+        seenFlushTimeout = setTimeout(flushSeenUpdates, 1500);
+      });
+    }, { threshold: 0.8 });
+    messagesEl.querySelectorAll('[data-message-id]').forEach((el) => seenObserver.observe(el));
+  }
+
+  // ── FCM push notifications ────────────────────────────
+  async function setupFCM(uid) {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+      swRegistration = swReg;
+      updatePushButtonState();
+    } catch (err) {
+      console.warn('Service worker registration failed:', err);
+      return;
+    }
+    const vapidKey = (FAMILY_CHAT_CONFIG.vapidPublicKey || '').trim();
+    if (!vapidKey || !messaging) return;
+    try {
+      const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: swRegistration });
+      if (token) {
+        await db.collection('fcmTokens').doc(uid).set({
+          token,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (err) {
+      console.warn('FCM token registration failed:', err);
+    }
+  }
+
   // ── Voice messages ────────────────────────────────────
   const voiceSupported = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
   if (!voiceSupported) voiceBtn.classList.add('hidden');
@@ -1184,7 +1283,11 @@
   auth.onAuthStateChanged(async (user) => {
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePending) { unsubscribePending(); unsubscribePending = null; }
+    if (unsubscribeProfiles) { unsubscribeProfiles(); unsubscribeProfiles = null; }
+    if (seenObserver) { seenObserver.disconnect(); seenObserver = null; }
     if (mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
+    profilesCache.clear();
+    pendingSeenUpdates.clear();
     cachedIsAllowed = false;
     cachedIsAdmin = false;
     adminBtn.classList.add('hidden');
@@ -1214,10 +1317,12 @@
     showUI('chat');
     updatePushButtonState();
     updateVoiceBtnVisibility();
-    if (Notification.permission === 'granted') {
-      registerNotificationSW();
-    }
+    setupFCM(user.uid);
     loadProfile(user.uid);
+
+    unsubscribeProfiles = db.collection('userProfiles').onSnapshot((snap) => {
+      snap.docs.forEach((doc) => profilesCache.set(doc.id, doc.data()));
+    });
 
     if (isAdmin) {
       adminBtn.classList.remove('hidden');

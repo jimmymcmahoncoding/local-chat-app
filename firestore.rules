@@ -92,8 +92,18 @@ service cloud.firestore {
         );
       allow delete: if isAllowed() && resource.data.uid == request.auth.uid;
       allow update: if isAllowed()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-        && request.resource.data.reactions is map;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'seenBy'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reactions'])
+          || request.resource.data.reactions is map
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenBy'])
+          || (
+            request.resource.data.seenBy is map
+            && request.resource.data.seenBy.diff(resource.data.get('seenBy', {})).affectedKeys().hasOnly([request.auth.uid])
+          )
+        );
     }
 
     match /userProfiles/{userId} {
@@ -106,6 +116,18 @@ service cloud.firestore {
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
         && request.resource.data.displayName.size() <= 30;
+    }
+
+    match /fcmTokens/{userId} {
+      allow read: if false;
+      allow write: if isAllowed()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['token', 'updatedAt'])
+        && request.resource.data.token is string
+        && request.resource.data.token.size() > 0
+        && request.resource.data.token.size() <= 4096
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAllowed() && request.auth.uid == userId;
     }
   }
 }

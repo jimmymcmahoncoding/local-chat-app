@@ -7,7 +7,25 @@ firebase.initializeApp(globalThis.FAMILY_CHAT_CONFIG.firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || 'Family Chat';
+  const title = payload.notification?.title || 'KidsChat';
   const body = payload.notification?.body || 'New message received';
-  self.registration.showNotification(title, { body });
+  self.registration.showNotification(title, {
+    body,
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
+  });
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if ('focus' in client) return client.focus();
+        }
+        if (clients.openWindow) return clients.openWindow('./');
+      })
+  );
 });
