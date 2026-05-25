@@ -20,6 +20,7 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
 
     const db = getFirestore();
     const tokensSnap = await db.collection('fcmTokens').get();
+    console.log(`fcmTokens total: ${tokensSnap.size}, senderUid: ${senderUid}`);
     if (tokensSnap.empty) return;
 
     const tokens = [];
@@ -30,6 +31,7 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
             docIds.push(doc.id);
         }
     });
+    console.log(`Tokens to notify: ${tokens.length}`);
     if (!tokens.length) return;
 
     const response = await getMessaging().sendEachForMulticast({
@@ -63,4 +65,5 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
         }
     });
     if (hasDeletions) await batch.commit();
+    console.log(`sendEachForMulticast done. Success: ${response.successCount}, Failure: ${response.failureCount}`);
 });
