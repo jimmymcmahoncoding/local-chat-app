@@ -28,6 +28,7 @@
   const userNameEl = document.getElementById('user-name');
   const pushStatus = document.getElementById('push-status');
   const pushEnableBtn = document.getElementById('push-enable-btn');
+  const pushResetBtn = document.getElementById('push-reset-btn');
   const profileBtn = document.getElementById('profile-btn');
   const userAvatarEl = document.getElementById('user-avatar');
   const profileModal = document.getElementById('profile-modal');
@@ -486,6 +487,24 @@
       });
   }
 
+  function showNotificationResetHelp() {
+    const message = [
+      'To force the browser prompt to appear again, reset the site permission first.',
+      '',
+      'Chrome on Mac:',
+      '1. Click the lock/site icon in the address bar.',
+      '2. Change Notifications to Ask or remove the site permission.',
+      '3. Reload the app and click Enable notifications again.',
+      '',
+      'Chrome on Android:',
+      '1. Open site settings for this site.',
+      '2. Reset Notifications for the site.',
+      '3. Reload the app and tap Enable notifications again.'
+    ].join('\n');
+    pushStatus.textContent = 'Reset the browser permission, then try again.';
+    alert(message);
+  }
+
   function showNotification(title, body) {
     if (swRegistration) {
       swRegistration.showNotification(title, { body }).catch((err) => {
@@ -504,19 +523,24 @@
     if (!notificationsSupported) {
       pushStatus.textContent = 'Notifications are not supported in this browser.';
       pushEnableBtn.classList.add('hidden');
+      pushResetBtn.classList.add('hidden');
       pushSection.classList.remove('hidden');
       return;
     }
     if (Notification.permission === 'granted') {
-      pushSection.classList.add('hidden');
+      pushStatus.textContent = 'Notifications are already enabled on this browser. To re-test the prompt, reset this site permission in browser settings.';
       pushEnableBtn.classList.add('hidden');
+      pushResetBtn.classList.remove('hidden');
+      pushSection.classList.remove('hidden');
     } else if (Notification.permission === 'denied') {
       pushStatus.textContent = 'Notifications blocked. Enable them in your browser or OS settings.';
       pushEnableBtn.classList.add('hidden');
+      pushResetBtn.classList.remove('hidden');
       pushSection.classList.remove('hidden');
     } else {
       pushStatus.textContent = '';
       pushEnableBtn.classList.remove('hidden');
+      pushResetBtn.classList.add('hidden');
       pushSection.classList.remove('hidden');
     }
   }
@@ -1160,10 +1184,17 @@
   pushEnableBtn.addEventListener('click', async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
+    if (Notification.permission !== 'default') {
+      showNotificationResetHelp();
+      updatePushButtonState();
+      return;
+    }
     const permission = await Notification.requestPermission().catch(() => 'denied');
     updatePushButtonState();
     if (permission === 'granted') await setupFCM(uid);
   });
+
+  pushResetBtn.addEventListener('click', showNotificationResetHelp);
 
   // ── FCM foreground message listener ────────────────────
   // When a message arrives while the tab is focused, handle it here instead of as an OS notification
