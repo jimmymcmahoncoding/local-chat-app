@@ -1165,6 +1165,23 @@
     if (permission === 'granted') await setupFCM(uid);
   });
 
+  // ── FCM foreground message listener ────────────────────
+  // When a message arrives while the tab is focused, handle it here instead of as an OS notification
+  if (messaging) {
+    messaging.onMessage((payload) => {
+      const title = payload.notification?.title || 'Family';
+      const body = payload.notification?.body || 'New message';
+      console.log('Foreground FCM message received:', { title, body });
+
+      // If the tab is in the background, show a browser notification
+      if (document.visibilityState !== 'visible' && swRegistration) {
+        swRegistration.showNotification(title, { body }).catch((err) => {
+          console.warn('Failed to show foreground notification:', err);
+        });
+      }
+    });
+  }
+
   // ── Voice messages ────────────────────────────────────
   const voiceSupported = typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
   if (!voiceSupported) voiceBtn.classList.add('hidden');

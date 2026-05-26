@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FCM Push Notification Tester</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 16px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #38bdf8;
+            margin: 0 0 4px;
+            font-size: 1.4rem;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-bottom: 20px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 14px 16px;
+            border-left: 4px solid #334155;
+        }
+
+        .card.ok {
+            border-left-color: #22c55e;
+        }
+
+        .card.warn {
+            border-left-color: #f59e0b;
+        }
+
+        .card.err {
+            border-left-color: #ef4444;
+        }
+
+        .card.info {
+            border-left-color: #38bdf8;
+        }
+
+        .card h3 {
+            margin: 0 0 6px;
+            font-size: 0.9rem;
+            color: #cbd5e1;
+        }
+
+        .card p {
+            margin: 0;
+            font-size: 0.82rem;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+
+        .card .value {
+            color: #f1f5f9;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .section-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+            margin: 20px 0 8px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .15s;
+            margin: 4px 4px 4px 0;
+        }
+
+        .btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: #fff;
+        }
+
+        .btn-success {
+            background: #22c55e;
+            color: #fff;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        .btn-neutral {
+            background: #334155;
+            color: #e2e8f0;
+        }
+
+        #log {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-ok {
+            color: #22c55e;
+        }
+
+        .log-warn {
+            color: #f59e0b;
+        }
+
+        .log-err {
+            color: #ef4444;
+        }
+
+        .log-info {
+            color: #38bdf8;
+        }
+
+        .token-box {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: #7dd3fc;
+            word-break: break-all;
+            margin-top: 8px;
+        }
+
+        .step-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 99px;
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+
+        .badge-ok {
+            background: #14532d;
+            color: #4ade80;
+        }
+
+        .badge-warn {
+            background: #78350f;
+            color: #fcd34d;
+        }
+
+        .badge-err {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        .badge-idle {
+            background: #1e293b;
+            color: #64748b;
+        }
+
+        .sign-in-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="email"],
+        input[type="password"] {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            padding: 8px 10px;
+            font-size: 0.85rem;
+            width: 200px;
+        }
+
+        .ios-note {
+            background: #1c1917;
+            border: 1px solid #78350f;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.8rem;
+            color: #fcd34d;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔔 FCM Push Notification Tester</h1>
+    <p class="subtitle">Step-by-step diagnostics for Firebase Cloud Messaging push notifications.</p>
+
+    <!-- ── Browser compatibility ── -->
+    <div class="section-title">1 · Browser &amp; Device Compatibility</div>
+    <div class="grid" id="compat-cards">
+        <div class="card" id="card-sw">
+            <h3>Service Worker</h3>
+            <p id="sw-status">checking…</p>
+        </div>
+        <div class="card" id="card-push">
+            <h3>Push API</h3>
+            <p id="push-api-status">checking…</p>
+        </div>
+        <div class="card" id="card-notif">
+            <h3>Notification API</h3>
+            <p id="notif-api-status">checking…</p>
+        </div>
+        <div class="card" id="card-platform">
+            <h3>Platform / Browser</h3>
+            <p id="platform-status">checking…</p>
+        </div>
+    </div>
+
+    <!-- ── iOS note ── -->
+    <div class="ios-note" id="ios-note" style="display:none; margin-top:12px;">
+        <strong>iOS detected.</strong> Push notifications require iOS 16.4+ <em>and</em> the site must be
+        <strong>added to your Home Screen</strong> (installed as a PWA). Regular Safari tabs do not receive
+        push notifications on iOS. Open this page in Safari → tap the Share button → "Add to Home Screen".
+    </div>
+
+    <!-- ── Sign in ── -->
+    <div class="section-title">2 · Sign In (required to save token)</div>
+    <div class="card" id="card-auth">
+        <h3>Firebase Auth <span class="badge badge-idle" id="auth-badge">not signed in</span></h3>
+        <div class="sign-in-row" id="signin-row">
+            <input type="email" id="email-input" placeholder="Email" autocomplete="username" />
+            <input type="password" id="pw-input" placeholder="Password" autocomplete="current-password" />
+            <button class="btn btn-primary" id="signin-btn">Sign In</button>
+        </div>
+        <p id="auth-info" style="margin-top:8px;"></p>
+    </div>
+
+    <!-- ── Service Worker ── -->
+    <div class="section-title">3 · Register FCM Service Worker</div>
+    <div class="card" id="card-sw-reg">
+        <h3>firebase-messaging-sw.js <span class="badge badge-idle" id="sw-reg-badge">not registered</span></h3>
+        <p id="sw-reg-info">Service worker must be registered before requesting a token.</p>
+        <div style="margin-top:10px;">
+            <button class="btn btn-primary" id="sw-reg-btn">Register Service Worker</button>
+        </div>
+    </div>
+
+    <!-- ── Permission ── -->
+    <div class="section-title">4 · Notification Permission</div>
+    <div class="card" id="card-permission">
+        <h3>Browser Notification Permission <span class="badge badge-idle" id="perm-badge">unknown</span></h3>
+        <p id="perm-info">Current permission: <span class="value" id="perm-value">—</span></p>
+        <div style="margin-top:10px;">
+            <button class="btn btn-primary" id="request-perm-btn">Request Permission</button>
+        </div>
+    </div>
+
+    <!-- ── FCM Token ── -->
+    <div class="section-title">5 · Get FCM Token</div>
+    <div class="card" id="card-token">
+        <h3>FCM Registration Token <span class="badge badge-idle" id="token-badge">not fetched</span></h3>
+        <p id="token-info">Token is the address FCM uses to deliver notifications to this device.</p>
+        <div style="margin-top:10px;">
+            <button class="btn btn-primary" id="get-token-btn">Get FCM Token</button>
+            <button class="btn btn-neutral" id="copy-token-btn" style="display:none;">Copy Token</button>
+        </div>
+        <div class="token-box" id="token-display" style="display:none;"></div>
+    </div>
+
+    <!-- ── Save token ── -->
+    <div class="section-title">6 · Save Token to Firestore</div>
+    <div class="card" id="card-save">
+        <h3>fcmTokens/{uid} <span class="badge badge-idle" id="save-badge">not saved</span></h3>
+        <p id="save-info">Token must be saved in Firestore so the cloud function can look it up when a message is sent.
+        </p>
+        <div style="margin-top:10px;">
+            <button class="btn btn-success" id="save-token-btn">Save Token to Firestore</button>
+        </div>
+    </div>
+
+    <!-- ── Send test notification ── -->
+    <div class="section-title">7 · Send Test Notification to This Device</div>
+    <div class="card" id="card-send">
+        <h3>Test Notification <span class="badge badge-idle" id="send-badge">idle</span></h3>
+        <p id="send-info">
+            Calls the <code>sendTestNotification</code> cloud function, which sends a real FCM push notification
+            to the token saved in Firestore for your account. Put the browser in the background to see it arrive
+            as an OS notification.
+        </p>
+        <div style="margin-top:10px;">
+            <button class="btn btn-success" id="send-btn">Send Test Notification to This Device</button>
+        </div>
+    </div>
+
+    <!-- ── Foreground message test ── -->
+    <div class="section-title">8 · Foreground Message Listener</div>
+    <div class="card info" id="card-fg">
+        <h3>Foreground Messages</h3>
+        <p id="fg-info">Keep this tab visible — incoming FCM messages while the tab is focused are shown here instead of
+            as OS notifications.</p>
+    </div>
+
+    <!-- ── Log ── -->
+    <div class="section-title">Diagnostic Log</div>
+    <div id="log"></div>
+
+    <!-- ── Firebase SDK (compat) ── -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+    <script src="./firebase-config.js"></script>
+
+    <script>
+        // ── State ──────────────────────────────────────────────────────────────
+        let app, auth, db, messaging, functions;
+        let swReg = null;
+        let currentToken = null;
+        let currentUser = null;
+
+        // ── Logging ────────────────────────────────────────────────────────────
+        const logEl = document.getElementById('log');
+        function log(msg, level = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const cls = level === 'ok' ? 'log-ok' : level === 'warn' ? 'log-warn' : level === 'err' ? 'log-err' : 'log-info';
+            const line = document.createElement('div');
+            line.className = cls;
+            line.textContent = `[${time}] ${msg}`;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // ── Card helpers ───────────────────────────────────────────────────────
+        function setCard(id, state, infoText) {
+            const card = document.getElementById(id);
+            card.className = 'card ' + (state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : state === 'err' ? 'err' : 'info');
+            if (infoText !== undefined) {
+                const p = card.querySelector('p');
+                if (p) p.innerHTML = infoText;
+            }
+        }
+        function setBadge(id, state, text) {
+            const b = document.getElementById(id);
+            b.className = 'badge badge-' + (state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : state === 'err' ? 'err' : 'idle');
+            b.textContent = text;
+        }
+
+        // ── 1. Compatibility check ─────────────────────────────────────────────
+        (function checkCompat() {
+            const hasSW = 'serviceWorker' in navigator;
+            const hasPush = 'PushManager' in window;
+            const hasNotif = 'Notification' in window;
+
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+            const isChrome = /Chrome\//.test(ua) && !/Edg\//.test(ua);
+            const isFirefox = /Firefox\//.test(ua);
+            const isEdge = /Edg\//.test(ua);
+            const browser = isChrome ? 'Chrome' : isFirefox ? 'Firefox' : isEdge ? 'Edge' : isSafari ? 'Safari' : 'Unknown';
+
+            document.getElementById('sw-status').innerHTML = hasSW ? '<span class="value">✅ Supported</span>' : '<span class="value" style="color:#ef4444">❌ Not supported — push notifications will not work</span>';
+            document.getElementById('push-api-status').innerHTML = hasPush ? '<span class="value">✅ Supported</span>' : '<span class="value" style="color:#ef4444">❌ Not supported</span>';
+            document.getElementById('notif-api-status').innerHTML = hasNotif ? '<span class="value">✅ Supported</span>' : '<span class="value" style="color:#ef4444">❌ Not supported</span>';
+            document.getElementById('platform-status').innerHTML = `<span class="value">${browser}</span> · ${navigator.platform} · ${isIOS ? 'iOS device' : 'non-iOS'}`;
+
+            document.getElementById('card-sw').className = 'card ' + (hasSW ? 'ok' : 'err');
+            document.getElementById('card-push').className = 'card ' + (hasPush ? 'ok' : 'err');
+            document.getElementById('card-notif').className = 'card ' + (hasNotif ? 'ok' : 'err');
+            document.getElementById('card-platform').className = 'card info';
+
+            if (isIOS) document.getElementById('ios-note').style.display = 'block';
+
+            log(`Browser: ${browser}`, 'info');
+            log(`ServiceWorker: ${hasSW}, PushManager: ${hasPush}, Notification: ${hasNotif}`, hasSW && hasPush && hasNotif ? 'ok' : 'err');
+            if (isIOS) log('iOS detected — push only works in PWA (Add to Home Screen)', 'warn');
+        })();
+
+        // ── Init Firebase ──────────────────────────────────────────────────────
+        (function initFirebase() {
+            if (!window.FAMILY_CHAT_CONFIG?.firebaseConfig) {
+                log('ERROR: firebase-config.js not loaded or missing FAMILY_CHAT_CONFIG', 'err');
+                return;
+            }
+            app = firebase.initializeApp(FAMILY_CHAT_CONFIG.firebaseConfig);
+            auth = firebase.auth();
+            db = firebase.firestore();
+            functions = firebase.app().functions('us-central1');
+
+            if ('serviceWorker' in navigator && 'PushManager' in window) {
+                try { messaging = firebase.messaging(); } catch (e) { log('messaging() init failed: ' + e.message, 'warn'); }
+            }
+
+            log('Firebase initialized (project: ' + FAMILY_CHAT_CONFIG.firebaseConfig.projectId + ')', 'ok');
+
+            // Update permission badge immediately
+            if ('Notification' in window) {
+                updatePermBadge(Notification.permission);
+            }
+        })();
+
+        // ── 2. Auth ────────────────────────────────────────────────────────────
+        document.getElementById('signin-btn').addEventListener('click', async () => {
+            const email = document.getElementById('email-input').value.trim();
+            const pw = document.getElementById('pw-input').value;
+            if (!email || !pw) { log('Enter email and password', 'warn'); return; }
+            try {
+                log('Signing in…', 'info');
+                await auth.signInWithEmailAndPassword(email, pw);
+            } catch (err) {
+                log('Sign-in failed: ' + err.message, 'err');
+                setCard('card-auth', 'err');
+                setBadge('auth-badge', 'err', 'error');
+                document.getElementById('auth-info').textContent = err.message;
+            }
+        });
+
+        auth.onAuthStateChanged((user) => {
+            currentUser = user;
+            if (user) {
+                log('Signed in as: ' + user.email + ' (uid: ' + user.uid + ')', 'ok');
+                setCard('card-auth', 'ok');
+                setBadge('auth-badge', 'ok', 'signed in');
+                document.getElementById('auth-info').innerHTML = `<span class="value">✅ ${user.email}</span> — uid: ${user.uid}`;
+                document.getElementById('signin-row').style.display = 'none';
+
+                // Check if a token is already saved for this user
+                db.collection('fcmTokens').doc(user.uid).get().then((snap) => {
+                    if (snap.exists && snap.data().token) {
+                        const saved = snap.data();
+                        const updated = saved.updatedAt?.toDate?.()?.toLocaleString() || 'unknown';
+                        log('Existing FCM token found in Firestore (last saved: ' + updated + ')', 'ok');
+                        setBadge('save-badge', 'ok', 'already saved');
+                        setCard('card-save', 'ok', `Token already saved in Firestore. Last updated: <span class="value">${updated}</span>`);
+                    } else {
+                        log('No FCM token found in Firestore for this user yet', 'warn');
+                    }
+                }).catch(() => { });
+            } else {
+                currentUser = null;
+                log('Not signed in', 'warn');
+                setCard('card-auth', 'warn');
+                setBadge('auth-badge', 'idle', 'not signed in');
+                document.getElementById('auth-info').textContent = '';
+                document.getElementById('signin-row').style.display = 'flex';
+            }
+        });
+
+        // ── 3. Register Service Worker ─────────────────────────────────────────
+        document.getElementById('sw-reg-btn').addEventListener('click', registerSW);
+
+        async function registerSW() {
+            if (!('serviceWorker' in navigator)) {
+                log('ServiceWorker not supported', 'err');
+                setCard('card-sw-reg', 'err', 'ServiceWorker is not supported in this browser.');
+                return;
+            }
+            try {
+                log('Registering firebase-messaging-sw.js…', 'info');
+                swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+                await navigator.serviceWorker.ready;
+                log('Service worker registered & active. Scope: ' + swReg.scope, 'ok');
+                setCard('card-sw-reg', 'ok', 'Service worker registered. Scope: <span class="value">' + swReg.scope + '</span>');
+                setBadge('sw-reg-badge', 'ok', 'registered');
+            } catch (err) {
+                log('SW registration failed: ' + err.message, 'err');
+                setCard('card-sw-reg', 'err', 'Registration failed: ' + err.message + ' — Make sure firebase-messaging-sw.js is in the root and firebase-config.js is accessible.');
+                setBadge('sw-reg-badge', 'err', 'failed');
+            }
+        }
+
+        // Auto-register SW on load
+        window.addEventListener('load', () => {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then((regs) => {
+                    const existing = regs.find(r => r.active?.scriptURL?.includes('firebase-messaging-sw.js'));
+                    if (existing) {
+                        swReg = existing;
+                        log('Existing SW found: ' + existing.scope, 'ok');
+                        setCard('card-sw-reg', 'ok', 'Service worker already registered. Scope: <span class="value">' + existing.scope + '</span>');
+                        setBadge('sw-reg-badge', 'ok', 'registered');
+                    }
+                });
+            }
+        });
+
+        // ── 4. Permission ──────────────────────────────────────────────────────
+        function updatePermBadge(perm) {
+            document.getElementById('perm-value').textContent = perm;
+            if (perm === 'granted') {
+                setCard('card-permission', 'ok');
+                setBadge('perm-badge', 'ok', 'granted');
+            } else if (perm === 'denied') {
+                setCard('card-permission', 'err', 'Permission was <strong>denied</strong>. To fix this, open your browser site settings for this page and re-allow notifications, or check macOS System Settings → Notifications.');
+                setBadge('perm-badge', 'err', 'denied');
+            } else {
+                setCard('card-permission', 'warn');
+                setBadge('perm-badge', 'warn', 'not yet asked');
+            }
+            document.getElementById('perm-value').textContent = perm;
+        }
+
+        document.getElementById('request-perm-btn').addEventListener('click', async () => {
+            if (!('Notification' in window)) {
+                log('Notification API not available', 'err');
+                return;
+            }
+            log('Requesting notification permission…', 'info');
+            const perm = await Notification.requestPermission().catch(() => 'denied');
+            log('Permission result: ' + perm, perm === 'granted' ? 'ok' : 'err');
+            updatePermBadge(perm);
+
+            if (perm === 'granted') {
+                log('✅ Notification permission granted! Proceed to get FCM token.', 'ok');
+            } else if (perm === 'denied') {
+                log('❌ Permission denied. On macOS: System Settings → Notifications → find your browser and allow. On iOS: only works in installed PWA.', 'err');
+            }
+        });
+
+        // ── 5. Get FCM Token ───────────────────────────────────────────────────
+        document.getElementById('get-token-btn').addEventListener('click', getFCMToken);
+        document.getElementById('copy-token-btn').addEventListener('click', () => {
+            if (currentToken) navigator.clipboard.writeText(currentToken).then(() => log('Token copied to clipboard', 'ok'));
+        });
+
+        async function getFCMToken() {
+            if (!messaging) {
+                log('Firebase Messaging not initialized. Check browser compatibility.', 'err');
+                setCard('card-token', 'err');
+                setBadge('token-badge', 'err', 'not available');
+                return;
+            }
+            if (Notification.permission !== 'granted') {
+                log('Cannot get token — notification permission not granted. Complete step 4 first.', 'warn');
+                return;
+            }
+            if (!swReg) {
+                log('No service worker registered. Complete step 3 first.', 'warn');
+                return;
+            }
+            const vapidKey = (FAMILY_CHAT_CONFIG.vapidPublicKey || '').trim();
+            if (!vapidKey) {
+                log('vapidPublicKey is missing from firebase-config.js', 'err');
+                setCard('card-token', 'err', '<span style="color:#fca5a5">vapidPublicKey is missing from firebase-config.js</span>');
+                setBadge('token-badge', 'err', 'no VAPID key');
+                return;
+            }
+            log('Getting FCM token (VAPID key present: ' + vapidKey.substring(0, 10) + '…)', 'info');
+
+            // Clear any existing push subscription first (ensures a fresh token)
+            try {
+                const existingSub = await swReg.pushManager.getSubscription();
+                if (existingSub) {
+                    log('Clearing existing push subscription before getting new token…', 'warn');
+                    await existingSub.unsubscribe();
+                }
+            } catch (e) { log('Could not clear subscription: ' + e.message, 'warn'); }
+
+            try {
+                const token = await messaging.getToken({ vapidKey, serviceWorkerRegistration: swReg });
+                if (token) {
+                    currentToken = token;
+                    log('✅ FCM token obtained: ' + token.substring(0, 30) + '…', 'ok');
+                    setCard('card-token', 'ok', 'Token obtained successfully.');
+                    setBadge('token-badge', 'ok', 'obtained');
+                    document.getElementById('token-display').textContent = token;
+                    document.getElementById('token-display').style.display = 'block';
+                    document.getElementById('copy-token-btn').style.display = 'inline-block';
+                } else {
+                    log('getToken() returned null — no token generated.', 'err');
+                    setCard('card-token', 'err', 'No token returned. This usually means permission was denied or the VAPID key is wrong.');
+                    setBadge('token-badge', 'err', 'null token');
+                }
+            } catch (err) {
+                log('getToken() failed: ' + err.message, 'err');
+                setCard('card-token', 'err', 'Error: ' + err.message);
+                setBadge('token-badge', 'err', 'error');
+
+                if (err.message.includes('messaging/permission-blocked')) {
+                    log('Fix: Allow notifications for this site in browser & OS settings', 'err');
+                } else if (err.message.includes('messaging/unsupported-browser')) {
+                    log('This browser does not support Web Push', 'err');
+                } else if (err.message.includes('auth/network-request-failed') || err.message.includes('Failed to fetch')) {
+                    log('Network error — check internet connection and Firebase project status', 'err');
+                }
+            }
+        }
+
+        // ── 6. Save token to Firestore ─────────────────────────────────────────
+        document.getElementById('save-token-btn').addEventListener('click', async () => {
+            if (!currentUser) {
+                log('Must be signed in to save token. Complete step 2 first.', 'warn');
+                return;
+            }
+            if (!currentToken) {
+                log('No token to save. Complete step 5 first.', 'warn');
+                return;
+            }
+            try {
+                log('Saving token to Firestore fcmTokens/' + currentUser.uid + '…', 'info');
+                await db.collection('fcmTokens').doc(currentUser.uid).set({
+                    token: currentToken,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                });
+                log('✅ Token saved to Firestore successfully!', 'ok');
+                setCard('card-save', 'ok', '✅ Token saved to <span class="value">fcmTokens/' + currentUser.uid + '</span>');
+                setBadge('save-badge', 'ok', 'saved');
+            } catch (err) {
+                log('Save failed: ' + err.message, 'err');
+                setCard('card-save', 'err', 'Save failed: ' + err.message);
+                setBadge('save-badge', 'err', 'error');
+                if (err.code === 'permission-denied') {
+                    log('Firestore permission denied — check firestore.rules allows writes to fcmTokens/{uid} when authenticated', 'err');
+                }
+            }
+        });
+
+        // ── 7. Send test notification ──────────────────────────────────────────
+        document.getElementById('send-btn').addEventListener('click', async () => {
+            if (!currentUser) {
+                log('Must be signed in. Complete step 2 first.', 'warn');
+                return;
+            }
+            if (!functions) {
+                log('Firebase Functions not initialized', 'err');
+                return;
+            }
+
+            document.getElementById('send-btn').disabled = true;
+            setBadge('send-badge', 'warn', 'sending…');
+            log('Calling sendTestNotification cloud function…', 'info');
+
+            try {
+                const sendTestNotification = functions.httpsCallable('sendTestNotification');
+                const result = await sendTestNotification();
+                log('✅ Cloud function responded: ' + JSON.stringify(result.data), 'ok');
+                setCard('card-send', 'ok', '✅ Notification sent via FCM! <br><br>If the tab is in the foreground you will see the message below (step 8). <strong>Background the tab or lock your phone screen</strong> to receive it as a native OS notification.');
+                setBadge('send-badge', 'ok', 'sent!');
+            } catch (err) {
+                log('sendTestNotification failed: ' + err.message, 'err');
+                setCard('card-send', 'err', 'Error: ' + err.message);
+                setBadge('send-badge', 'err', 'error');
+
+                if (err.message.includes('not-found') || err.message.includes('FUNCTION_NOT_FOUND')) {
+                    log('Cloud function not found — make sure you deployed sendTestNotification to Firebase Functions', 'warn');
+                } else if (err.message.includes('unauthenticated')) {
+                    log('Function returned unauthenticated — you must be signed in', 'warn');
+                } else if (err.message.includes('No FCM token')) {
+                    log('No token saved in Firestore for your account — complete steps 5 & 6 first', 'warn');
+                }
+            } finally {
+                document.getElementById('send-btn').disabled = false;
+            }
+        });
+
+        // ── 8. Foreground message listener ────────────────────────────────────
+        // Set up after Firebase is ready
+        window.addEventListener('load', () => {
+            if (!messaging) return;
+            messaging.onMessage((payload) => {
+                log('📨 Foreground message received!', 'ok');
+                log('  title: ' + (payload.notification?.title || '(none)'), 'ok');
+                log('  body:  ' + (payload.notification?.body || '(none)'), 'ok');
+                log('  data:  ' + JSON.stringify(payload.data || {}), 'info');
+
+                setCard('card-fg', 'ok',
+                    '📨 <strong>' + (payload.notification?.title || 'Message') + '</strong><br>' +
+                    (payload.notification?.body || '') +
+                    '<br><small style="color:#64748b">Received ' + new Date().toLocaleTimeString() + '</small>'
+                );
+
+                // Show a local notification if we are in the background (visibilityState)
+                if (document.visibilityState !== 'visible') {
+                    if (swReg) swReg.showNotification(payload.notification?.title || 'Test', { body: payload.notification?.body });
+                }
+            });
+            log('Foreground message listener attached', 'info');
+        });
+
+    </script>
+</body>
+
+</html>
