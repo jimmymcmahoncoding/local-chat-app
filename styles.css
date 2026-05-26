@@ -302,15 +302,6 @@ body {
   background: var(--warn-border);
 }
 
-.push-reset-btn {
-  border-color: var(--error);
-  color: var(--error);
-}
-
-.push-reset-btn:hover {
-  background: rgba(220, 38, 38, 0.08);
-}
-
 /* ── Messages area ───────────────────────────────────────── */
 #messages {
   flex: 1;
