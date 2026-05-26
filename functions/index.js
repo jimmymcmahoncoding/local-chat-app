@@ -6,13 +6,13 @@ const { getMessaging } = require('firebase-admin/messaging');
 
 initializeApp();
 
-// Convert an emoji character to a Twemoji CDN PNG URL (Chrome requires PNG, not SVG).
+// Convert an emoji character to a PNG URL via emoji-datasource-twitter CDN.
 function emojiToTwemojiUrl(emoji) {
     const codepoints = [...emoji]
         .map(c => c.codePointAt(0).toString(16))
         .filter(cp => cp !== 'fe0f') // strip variation selector-16
         .join('-');
-    return `https://cdn.jsdelivr.net/npm/twemoji@14.0.2/assets/72x72/${codepoints}.png`;
+    return `https://cdn.jsdelivr.net/npm/emoji-datasource-twitter@15.0.0/img/twitter/64/${codepoints}.png`;
 }
 
 exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', async (event) => {
