@@ -6,11 +6,23 @@ const { getMessaging } = require('firebase-admin/messaging');
 
 initializeApp();
 
+// Convert an emoji character to a Twemoji CDN PNG URL (Chrome requires PNG, not SVG).
+function emojiToTwemojiUrl(emoji) {
+    const codepoints = [...emoji]
+        .map(c => c.codePointAt(0).toString(16))
+        .filter(cp => cp !== 'fe0f') // strip variation selector-16
+        .join('-');
+    return `https://cdn.jsdelivr.net/npm/twemoji@14.0.2/assets/72x72/${codepoints}.png`;
+}
+
 exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', async (event) => {
     const data = event.data.data();
     if (!data) return;
     const messageId = event.params.messageId;
-    const notificationIcon = 'https://kidschat-family.vercel.app/favicon.svg';
+
+    // Use the sender's emoji avatar as the notification icon (falls back to 😀).
+    const senderAvatar = String(data.avatar || '😀').trim();
+    const notificationIcon = emojiToTwemojiUrl(senderAvatar);
 
     const senderUid = data.uid;
     const senderName = String(data.displayName || 'Family').slice(0, 50);
