@@ -9,6 +9,7 @@ initializeApp();
 exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', async (event) => {
     const data = event.data.data();
     if (!data) return;
+    const messageId = event.params.messageId;
 
     const senderUid = data.uid;
     const senderName = String(data.displayName || 'Family').slice(0, 50);
@@ -41,10 +42,15 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
             title: `${senderName} sent a message`,
             body,
         },
+        data: {
+            messageId,
+        },
         webpush: {
             notification: {
                 icon: '/favicon.svg',
                 badge: '/favicon.svg',
+                tag: `msg-${messageId}`,
+                renotify: false,
             },
             fcmOptions: { link: '/' },
         },

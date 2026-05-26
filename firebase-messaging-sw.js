@@ -7,6 +7,9 @@ firebase.initializeApp(globalThis.FAMILY_CHAT_CONFIG.firebaseConfig);
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
+  // For notification messages, Chrome already displays the notification.
+  // Only manually show for data-only payloads to avoid duplicate alerts.
+  if (payload.notification) return;
   const title = payload.notification?.title || 'KidsChat';
   const body = payload.notification?.body || 'New message received';
   self.registration.showNotification(title, {

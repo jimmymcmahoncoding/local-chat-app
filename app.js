@@ -1203,13 +1203,6 @@
       const title = payload.notification?.title || 'Family';
       const body = payload.notification?.body || 'New message';
       console.log('Foreground FCM message received:', { title, body });
-
-      // If the tab is in the background, show a browser notification
-      if (document.visibilityState !== 'visible' && swRegistration) {
-        swRegistration.showNotification(title, { body }).catch((err) => {
-          console.warn('Failed to show foreground notification:', err);
-        });
-      }
     });
   }
 
