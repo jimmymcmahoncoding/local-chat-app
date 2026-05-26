@@ -10,6 +10,7 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     const data = event.data.data();
     if (!data) return;
     const messageId = event.params.messageId;
+    const notificationIcon = 'https://kidschat-family.vercel.app/favicon.svg';
 
     const senderUid = data.uid;
     const senderName = String(data.displayName || 'Family').slice(0, 50);
@@ -25,14 +26,17 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     console.log(`fcmTokens total: ${tokensSnap.size}, senderUid: ${senderUid}`);
     if (tokensSnap.empty) return;
 
-    const tokens = [];
-    const docIds = [];
+    const recipientsByToken = new Map();
     tokensSnap.docs.forEach((doc) => {
-        if (doc.id !== senderUid && doc.data().token) {
-            tokens.push(doc.data().token);
-            docIds.push(doc.id);
-        }
+        if (doc.id === senderUid) return;
+        const token = String(doc.data().token || '').trim();
+        if (!token) return;
+        const docIds = recipientsByToken.get(token) || [];
+        docIds.push(doc.id);
+        recipientsByToken.set(token, docIds);
     });
+
+    const tokens = Array.from(recipientsByToken.keys());
     console.log(`Tokens to notify: ${tokens.length}`);
     if (!tokens.length) return;
 
@@ -47,12 +51,12 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
         },
         webpush: {
             notification: {
-                icon: '/favicon.svg',
-                badge: '/favicon.svg',
+                icon: notificationIcon,
+                badge: notificationIcon,
                 tag: `msg-${messageId}`,
                 renotify: false,
             },
-            fcmOptions: { link: '/' },
+            fcmOptions: { link: 'https://kidschat-family.vercel.app/' },
         },
     });
 
@@ -61,6 +65,7 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     let hasDeletions = false;
     response.responses.forEach((resp, i) => {
         if (!resp.success) {
+            const token = tokens[i];
             const code = resp.error?.code;
             console.log(`Token failure [${i}] code: ${code}, message: ${resp.error?.message}`);
             if (
@@ -68,8 +73,11 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
                 code === 'messaging/registration-token-not-registered' ||
                 code === 'messaging/third-party-auth-error'
             ) {
-                batch.delete(db.collection('fcmTokens').doc(docIds[i]));
-                hasDeletions = true;
+                const linkedDocIds = recipientsByToken.get(token) || [];
+                linkedDocIds.forEach((docId) => {
+                    batch.delete(db.collection('fcmTokens').doc(docId));
+                    hasDeletions = true;
+                });
             }
         }
     });
