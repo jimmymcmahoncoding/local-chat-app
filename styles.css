@@ -497,6 +497,11 @@ body {
   background: var(--page-bg);
 }
 
+.btn-composer-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .btn-composer-gif {
   font-size: 0.68rem;
   font-weight: 700;
