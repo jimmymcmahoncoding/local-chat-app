@@ -91,6 +91,12 @@
         <span>KidsChat</span>
       </div>
       <div class="chat-header__actions">
+        <button id="chats-btn" class="btn-chats hidden" title="Chats" aria-label="Chats">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
         <button id="users-btn" class="btn-users hidden" title="Users" aria-label="Users">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
@@ -215,6 +221,25 @@
           <button id="admin-panel-close-btn" type="button" class="admin-panel__close" aria-label="Close">✕</button>
         </div>
         <div id="admin-panel-list" class="admin-panel__list"></div>
+      </div>
+    </div>
+
+    <!-- Chats panel -->
+    <div id="chats-panel" class="chats-panel hidden" role="dialog" aria-label="Chats">
+      <div class="chats-panel__inner">
+        <div class="chats-panel__header">
+          <h2 class="chats-panel__title">Chats</h2>
+          <button id="new-dm-btn" type="button" class="chats-panel__new-btn" title="New message"
+            aria-label="New message">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <button id="chats-panel-close-btn" type="button" class="chats-panel__close" aria-label="Close">✕</button>
+        </div>
+        <div id="chats-panel-list" class="chats-panel__list"></div>
       </div>
     </div>
 

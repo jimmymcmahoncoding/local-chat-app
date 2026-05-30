@@ -104,6 +104,10 @@
   const photoInputEl = document.getElementById('photo-input');
   const dmPhotoBtnEl = document.getElementById('dm-photo-btn');
   const dmPhotoInputEl = document.getElementById('dm-photo-input');
+  const chatsBtnEl = document.getElementById('chats-btn');
+  const chatsPanelEl = document.getElementById('chats-panel');
+  const chatsPanelListEl = document.getElementById('chats-panel-list');
+  const newDmBtnEl = document.getElementById('new-dm-btn');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -140,6 +144,8 @@
   let currentDMConversationId = null;
   let currentDMPartnerUid = null;
   let unsubscribeDMMessages = null;
+  const dmConversationsCache = new Map();
+  let unsubscribeDMConversations = null;
 
   let mediaRecorder = null;
   let audioChunks = [];
@@ -274,6 +280,24 @@
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  }
+
+  function formatChatTime(date) {
+    if (!date) return '';
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    if (date.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday';
+    }
+    const diffDays = (now - date) / 86400000;
+    if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    }
+    return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
   }
 
   function getAvatarColor(name) {
@@ -1255,9 +1279,29 @@
       }
       // Refresh users panel if open
       if (!usersPanelEl.classList.contains('hidden')) renderUsersList();
+      // Refresh chats panel if open
+      if (!chatsPanelEl.classList.contains('hidden')) renderChatsList();
       // Refresh DM header if open
       if (currentDMPartnerUid && !dmPanelEl.classList.contains('hidden')) updateDMHeader();
     });
+  }
+
+  function subscribeDMConversations(uid) {
+    if (unsubscribeDMConversations) { unsubscribeDMConversations(); unsubscribeDMConversations = null; }
+    unsubscribeDMConversations = db.collection('directMessages')
+      .where('participants', 'array-contains', uid)
+      .onSnapshot((snap) => {
+        snap.docChanges().forEach((change) => {
+          if (change.type === 'removed') {
+            dmConversationsCache.delete(change.doc.id);
+          } else {
+            dmConversationsCache.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+          }
+        });
+        if (!chatsPanelEl.classList.contains('hidden')) renderChatsList();
+      }, (err) => {
+        console.warn('DM conversations subscription error:', err);
+      });
   }
 
   // ── Typing indicators ──────────────────────────────────
@@ -1639,6 +1683,84 @@
   }
 
   // ── Users panel ────────────────────────────────────────
+  function renderChatsList() {
+    if (!chatsPanelListEl) return;
+    chatsPanelListEl.innerHTML = '';
+
+    // Group Chat row (always at top)
+    const groupItem = document.createElement('div');
+    groupItem.className = 'chat-list-item';
+    groupItem.innerHTML = `
+      <div class="chat-list-item__avatar-wrap">
+        <div class="chat-list-item__avatar chat-list-item__avatar--group">👪</div>
+      </div>
+      <div class="chat-list-item__info">
+        <div class="chat-list-item__row">
+          <span class="chat-list-item__name">Group Chat</span>
+        </div>
+        <div class="chat-list-item__preview">All family members</div>
+      </div>`;
+    groupItem.addEventListener('click', () => chatsPanelEl.classList.add('hidden'));
+    chatsPanelListEl.appendChild(groupItem);
+
+    // DM conversations sorted by most recent
+    const convs = [...dmConversationsCache.values()].sort((a, b) => {
+      const at = a.updatedAt?.toMillis?.() || 0;
+      const bt = b.updatedAt?.toMillis?.() || 0;
+      return bt - at;
+    });
+
+    if (convs.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'chats-panel__sep';
+      sep.textContent = 'Direct Messages';
+      chatsPanelListEl.appendChild(sep);
+    }
+
+    convs.forEach((conv) => {
+      const partnerUid = (conv.participants || []).find((p) => p !== currentUid);
+      if (!partnerUid) return;
+      const profile = profilesCache.get(partnerUid) || {};
+      const online = isUserOnline(partnerUid);
+      const item = document.createElement('div');
+      item.className = 'chat-list-item';
+      const hasEmoji = profile.avatar && AVATAR_OPTIONS.includes(profile.avatar);
+      let avatarHtml;
+      if (hasEmoji) {
+        avatarHtml = `<div class="chat-list-item__avatar">${escapeHtml(profile.avatar)}</div>`;
+      } else {
+        const bg = getAvatarColor(profile.displayName || '');
+        avatarHtml = `<div class="chat-list-item__avatar chat-list-item__avatar--initials" style="background:${bg}">${escapeHtml(getInitials(profile.displayName || ''))}</div>`;
+      }
+      const lastMsg = conv.lastMessage ? String(conv.lastMessage).slice(0, 60) : 'No messages yet';
+      const time = conv.updatedAt ? formatChatTime(conv.updatedAt.toDate?.() || new Date(conv.updatedAt)) : '';
+      item.innerHTML = `
+        <div class="chat-list-item__avatar-wrap">
+          ${avatarHtml}
+          <span class="chat-list-item__presence${online ? '' : ' chat-list-item__presence--offline'}"></span>
+        </div>
+        <div class="chat-list-item__info">
+          <div class="chat-list-item__row">
+            <span class="chat-list-item__name">${escapeHtml(profile.displayName || 'User')}</span>
+            <span class="chat-list-item__time">${escapeHtml(time)}</span>
+          </div>
+          <div class="chat-list-item__preview">${escapeHtml(lastMsg)}</div>
+        </div>`;
+      item.addEventListener('click', () => {
+        chatsPanelEl.classList.add('hidden');
+        openDM(partnerUid);
+      });
+      chatsPanelListEl.appendChild(item);
+    });
+
+    if (convs.length === 0) {
+      const noConvs = document.createElement('p');
+      noConvs.className = 'chats-panel__empty';
+      noConvs.textContent = 'No direct messages yet. Tap the pencil icon to start one.';
+      chatsPanelListEl.appendChild(noConvs);
+    }
+  }
+
   function renderUsersList() {
     if (!usersPanelListEl) return;
     usersPanelListEl.innerHTML = '';
@@ -1696,6 +1818,20 @@
   });
   document.getElementById('users-panel-close-btn').addEventListener('click', () => usersPanelEl.classList.add('hidden'));
   usersPanelEl.addEventListener('click', (e) => { if (e.target === usersPanelEl) usersPanelEl.classList.add('hidden'); });
+
+  chatsBtnEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasHidden = chatsPanelEl.classList.contains('hidden');
+    chatsPanelEl.classList.toggle('hidden', !wasHidden);
+    if (wasHidden) renderChatsList();
+  });
+  document.getElementById('chats-panel-close-btn').addEventListener('click', () => chatsPanelEl.classList.add('hidden'));
+  chatsPanelEl.addEventListener('click', (e) => { if (e.target === chatsPanelEl) chatsPanelEl.classList.add('hidden'); });
+  newDmBtnEl.addEventListener('click', () => {
+    chatsPanelEl.classList.add('hidden');
+    renderUsersList();
+    usersPanelEl.classList.remove('hidden');
+  });
 
   dmBackBtn.addEventListener('click', closeDMPanel);
 
@@ -2001,6 +2137,7 @@
     if (unsubscribeProfiles) { unsubscribeProfiles(); unsubscribeProfiles = null; }
     if (unsubscribePresence) { unsubscribePresence(); unsubscribePresence = null; }
     if (unsubscribeTyping) { unsubscribeTyping(); unsubscribeTyping = null; }
+    if (unsubscribeDMConversations) { unsubscribeDMConversations(); unsubscribeDMConversations = null; }
     if (seenObserver) { seenObserver.disconnect(); seenObserver = null; }
     if (mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
 
@@ -2011,9 +2148,11 @@
       currentUid = null;
     }
     closeDMPanel();
+    chatsPanelEl.classList.add('hidden');
     usersPanelEl.classList.add('hidden');
     presenceCache.clear();
     profilesCache.clear();
+    dmConversationsCache.clear();
     pendingSeenUpdates.clear();
     cachedIsAllowed = false;
     cachedIsAdmin = false;
@@ -2049,6 +2188,7 @@
 
     currentUid = user.uid;
     usersBtnEl.classList.remove('hidden');
+    chatsBtnEl.classList.remove('hidden');
 
     unsubscribeProfiles = db.collection('userProfiles').onSnapshot((snap) => {
       snap.docs.forEach((doc) => profilesCache.set(doc.id, doc.data()));
@@ -2057,6 +2197,7 @@
     });
 
     subscribePresence();
+    subscribeDMConversations(user.uid);
     subscribeMainTyping(user.uid);
 
     if (isAdmin) {
