@@ -215,8 +215,8 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -441,8 +441,8 @@ body {
 
 .btn-send {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
   background: var(--primary);
@@ -478,8 +478,8 @@ body {
 /* ── Composer icon buttons (emoji + GIF) ────────────────── */
 .btn-composer-icon {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -504,8 +504,8 @@ body {
   letter-spacing: 0.04em;
   border: 1.5px solid var(--border);
   width: auto;
-  padding: 0 6px;
-  height: 26px;
+  padding: 0 10px;
+  height: 44px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
@@ -628,6 +628,7 @@ emoji-picker {
   border: none;
   border-radius: 20px;
   padding: 0.2rem 0.5rem;
+  min-height: 44px;
   cursor: pointer;
   flex: 1;
   min-width: 0;
@@ -1813,8 +1814,8 @@ emoji-picker {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--muted);
@@ -2019,8 +2020,8 @@ emoji-picker {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--muted);
