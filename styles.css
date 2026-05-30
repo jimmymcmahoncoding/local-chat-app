@@ -1267,6 +1267,7 @@ emoji-picker {
 
 .btn-email-submit {
   width: 100%;
+  min-height: 44px;
   padding: 0.7rem 1rem;
   border: none;
   border-radius: 10px;
