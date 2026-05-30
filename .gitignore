@@ -1,4 +1,8 @@
 firebase-config.js
 functions/node_modules
 firebase-debug.log
+node_modules
+.env.test
+playwright-report
+test-results
 
