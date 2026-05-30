@@ -833,6 +833,13 @@ emoji-picker {
     font-size: 0.72rem;
     padding: 0.25rem 0.5rem;
   }
+
+  /* On very narrow screens (≤400px) the newline helper button is not needed —
+     mobile keyboards handle new-lines natively. Hiding it frees ~52px so the
+     message textarea has a usable width on Galaxy S24 (360 CSS px). */
+  #newline-btn {
+    display: none;
+  }
 }
 
 /* ── Reply preview bar (composer) ───────────────────────── */
