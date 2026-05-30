@@ -1370,15 +1370,9 @@
     unsubscribeTyping = db.collection('typingIndicators')
       .where('roomId', '==', 'main')
       .onSnapshot((snap) => {
-        const now = Date.now();
         const names = snap.docs
           .filter((doc) => doc.id !== uid)
-          .filter((doc) => {
-            const d = doc.data();
-            if (!d.isTyping) return false;
-            const updated = d.updatedAt?.toDate?.();
-            return updated && (now - updated.getTime()) < 5000;
-          })
+          .filter((doc) => doc.data().isTyping === true)
           .map((doc) => doc.data().displayName || 'Someone');
         if (!typingIndicatorEl) return;
         if (!names.length) {
@@ -1402,12 +1396,9 @@
     unsubscribeDMTyping = db.collection('typingIndicators')
       .where('roomId', '==', conversationId)
       .onSnapshot((snap) => {
-        const now = Date.now();
         const isTyping = snap.docs.some((doc) => {
           if (doc.id === uid) return false;
-          const d = doc.data();
-          const updated = d.updatedAt?.toDate?.();
-          return d.isTyping && updated && (now - updated.getTime()) < 5000;
+          return doc.data().isTyping === true;
         });
         if (!dmTypingEl) return;
         if (isTyping) {
