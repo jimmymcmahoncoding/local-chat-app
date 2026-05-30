@@ -85,6 +85,21 @@
   const voiceTimer = document.getElementById('voice-timer');
   const voiceCancelBtn = document.getElementById('voice-cancel-btn');
   const voiceSendBtn = document.getElementById('voice-send-btn');
+  const typingIndicatorEl = document.getElementById('typing-indicator');
+  const mentionDropdownEl = document.getElementById('mention-dropdown');
+  const usersBtnEl = document.getElementById('users-btn');
+  const usersBadgeEl = document.getElementById('users-badge');
+  const usersPanelEl = document.getElementById('users-panel');
+  const usersPanelListEl = document.getElementById('users-panel-list');
+  const dmPanelEl = document.getElementById('dm-panel');
+  const dmMessagesEl = document.getElementById('dm-messages');
+  const dmFormEl = document.getElementById('dm-form');
+  const dmInputEl = document.getElementById('dm-input');
+  const dmBackBtn = document.getElementById('dm-back-btn');
+  const dmUserAvatarEl = document.getElementById('dm-user-avatar');
+  const dmUserNameEl = document.getElementById('dm-user-name');
+  const dmUserStatusEl = document.getElementById('dm-user-status');
+  const dmTypingEl = document.getElementById('dm-typing-indicator');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -100,6 +115,27 @@
   let selectedMsgId = null;
   let selectedMsgData = null;
   let selectedMsgIsOwn = false;
+
+  // ── Presence ──────────────────────────────────────────────
+  const presenceCache = new Map();
+  let unsubscribePresence = null;
+  let presenceHeartbeatInterval = null;
+  let currentUid = null;
+
+  // ── Typing indicators ─────────────────────────────────────
+  let unsubscribeTyping = null;
+  let unsubscribeDMTyping = null;
+  let typingTimeout = null;
+  let currentTypingRoomId = null;
+
+  // ── @Mentions autocomplete ─────────────────────────────────
+  let mentionAnchorIndex = -1;
+  let mentionActiveIndex = -1;
+
+  // ── Direct Messages ───────────────────────────────────────
+  let currentDMConversationId = null;
+  let currentDMPartnerUid = null;
+  let unsubscribeDMMessages = null;
 
   let mediaRecorder = null;
   let audioChunks = [];
@@ -310,7 +346,7 @@
           ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeAudioUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
           : `<div class="msg__text">[Voice message]</div>`;
       } else {
-        mediaContent = `<div class="msg__text">${escapeHtml(data.text || '')}</div>`;
+        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
 
       const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
@@ -394,6 +430,22 @@
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
         pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
       });
+
+      // Make sender name/avatar clickable to open DM
+      if (!isOwn && data.uid) {
+        const nameEl = wrapper.querySelector('.msg__name');
+        if (nameEl) {
+          nameEl.classList.add('msg__name--clickable');
+          nameEl.title = 'Send direct message';
+          nameEl.addEventListener('click', (e) => { e.stopPropagation(); openDM(data.uid); });
+        }
+        const avatarEl = wrapper.querySelector('.msg__avatar');
+        if (avatarEl) {
+          avatarEl.title = 'Send direct message';
+          avatarEl.style.cursor = 'pointer';
+          avatarEl.addEventListener('click', (e) => { e.stopPropagation(); openDM(data.uid); });
+        }
+      }
 
       messagesEl.appendChild(wrapper);
     });
@@ -601,6 +653,8 @@
       updateVoiceBtnVisibility();
       messageStatus.textContent = '';
       clearReply();
+      clearTypingStatus(user.uid);
+      hideMentionDropdown();
     } catch (error) {
       messageStatus.textContent = `Message failed: ${error.message}`;
     }
@@ -610,9 +664,13 @@
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
     updateVoiceBtnVisibility();
+    updateMentionDropdown();
+    const uid = auth.currentUser?.uid;
+    if (uid && cachedIsAllowed && input.value.trim()) handleTypingInput(uid, 'main');
   });
 
   input.addEventListener('keydown', (e) => {
+    if (handleMentionKeydown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       form.requestSubmit();
@@ -1125,6 +1183,522 @@
     messagesEl.querySelectorAll('[data-message-id]').forEach((el) => seenObserver.observe(el));
   }
 
+  // ── Presence ──────────────────────────────────────────
+  async function setUserPresence(uid, online) {
+    if (!uid) return;
+    try {
+      await db.collection('presence').doc(uid).set({
+        online,
+        lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+        displayName: currentProfile.displayName || '',
+        avatar: currentProfile.avatar || '😀',
+      });
+    } catch { /* ignore */ }
+  }
+
+  function isUserOnline(uid) {
+    const p = presenceCache.get(uid);
+    if (!p || !p.online) return false;
+    const lastSeen = p.lastSeen?.toDate?.();
+    if (!lastSeen) return false;
+    return (Date.now() - lastSeen.getTime()) < 120000; // 2-min threshold
+  }
+
+  function startPresence(uid) {
+    setUserPresence(uid, true);
+    if (presenceHeartbeatInterval) clearInterval(presenceHeartbeatInterval);
+    presenceHeartbeatInterval = setInterval(() => {
+      if (!document.hidden) setUserPresence(uid, true);
+    }, 30000);
+  }
+
+  function stopPresence(uid) {
+    if (presenceHeartbeatInterval) { clearInterval(presenceHeartbeatInterval); presenceHeartbeatInterval = null; }
+    if (uid) setUserPresence(uid, false);
+  }
+
+  function subscribePresence() {
+    if (unsubscribePresence) unsubscribePresence();
+    unsubscribePresence = db.collection('presence').onSnapshot((snap) => {
+      snap.docs.forEach((doc) => presenceCache.set(doc.id, doc.data()));
+      // Update online count badge
+      const onlineCount = [...presenceCache.keys()]
+        .filter((uid) => uid !== currentUid && isUserOnline(uid)).length;
+      if (usersBadgeEl) {
+        usersBadgeEl.textContent = onlineCount;
+        usersBadgeEl.classList.toggle('hidden', onlineCount === 0);
+      }
+      // Refresh users panel if open
+      if (!usersPanelEl.classList.contains('hidden')) renderUsersList();
+      // Refresh DM header if open
+      if (currentDMPartnerUid && !dmPanelEl.classList.contains('hidden')) updateDMHeader();
+    });
+  }
+
+  // ── Typing indicators ──────────────────────────────────
+  async function setTypingStatus(uid, isTyping, roomId) {
+    if (!uid || !roomId) return;
+    try {
+      if (isTyping) {
+        await db.collection('typingIndicators').doc(uid).set({
+          isTyping: true,
+          displayName: currentProfile.displayName || '',
+          roomId,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        await db.collection('typingIndicators').doc(uid).delete();
+      }
+    } catch { /* ignore */ }
+  }
+
+  function handleTypingInput(uid, roomId) {
+    if (currentTypingRoomId && currentTypingRoomId !== roomId) {
+      setTypingStatus(uid, false, currentTypingRoomId);
+    }
+    currentTypingRoomId = roomId;
+    setTypingStatus(uid, true, roomId);
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      setTypingStatus(uid, false, roomId);
+      currentTypingRoomId = null;
+    }, 3000);
+  }
+
+  function clearTypingStatus(uid) {
+    clearTimeout(typingTimeout);
+    typingTimeout = null;
+    if (currentTypingRoomId) {
+      setTypingStatus(uid, false, currentTypingRoomId);
+      currentTypingRoomId = null;
+    }
+  }
+
+  function subscribeMainTyping(uid) {
+    if (unsubscribeTyping) unsubscribeTyping();
+    unsubscribeTyping = db.collection('typingIndicators')
+      .where('roomId', '==', 'main')
+      .onSnapshot((snap) => {
+        const now = Date.now();
+        const names = snap.docs
+          .filter((doc) => doc.id !== uid)
+          .filter((doc) => {
+            const d = doc.data();
+            if (!d.isTyping) return false;
+            const updated = d.updatedAt?.toDate?.();
+            return updated && (now - updated.getTime()) < 5000;
+          })
+          .map((doc) => doc.data().displayName || 'Someone');
+        if (!typingIndicatorEl) return;
+        if (!names.length) {
+          typingIndicatorEl.textContent = '';
+          typingIndicatorEl.classList.add('hidden');
+        } else {
+          const text = names.length === 1
+            ? `${names[0]} is typing\u2026`
+            : names.length === 2
+              ? `${names[0]} and ${names[1]} are typing\u2026`
+              : 'Several people are typing\u2026';
+          typingIndicatorEl.textContent = text;
+          typingIndicatorEl.classList.remove('hidden');
+        }
+      });
+  }
+
+  function subscribeDMTyping(conversationId, uid) {
+    if (unsubscribeDMTyping) { unsubscribeDMTyping(); unsubscribeDMTyping = null; }
+    if (!conversationId) return;
+    unsubscribeDMTyping = db.collection('typingIndicators')
+      .where('roomId', '==', conversationId)
+      .onSnapshot((snap) => {
+        const now = Date.now();
+        const isTyping = snap.docs.some((doc) => {
+          if (doc.id === uid) return false;
+          const d = doc.data();
+          const updated = d.updatedAt?.toDate?.();
+          return d.isTyping && updated && (now - updated.getTime()) < 5000;
+        });
+        if (!dmTypingEl) return;
+        if (isTyping) {
+          const partnerProfile = profilesCache.get(currentDMPartnerUid);
+          dmTypingEl.textContent = `${partnerProfile?.displayName || 'User'} is typing\u2026`;
+          dmTypingEl.classList.remove('hidden');
+        } else {
+          dmTypingEl.textContent = '';
+          dmTypingEl.classList.add('hidden');
+        }
+      });
+  }
+
+  // ── @Mention autocomplete ──────────────────────────────
+  function renderTextWithMentions(text, currentDisplayName) {
+    let escaped = escapeHtml(text);
+    const names = new Set();
+    profilesCache.forEach((profile) => { if (profile.displayName) names.add(profile.displayName); });
+    if (currentDisplayName) names.add(currentDisplayName);
+    // Sort longest first to avoid partial matches
+    const sorted = [...names].sort((a, b) => b.length - a.length);
+    for (const name of sorted) {
+      const escapedName = escapeHtml(name);
+      const isSelf = name === currentDisplayName;
+      const cls = `msg__mention${isSelf ? ' msg__mention--self' : ''}`;
+      escaped = escaped.split('@' + escapedName).join(`<span class="${cls}">@${escapedName}</span>`);
+    }
+    return `<div class="msg__text">${escaped}</div>`;
+  }
+
+  function getActiveMentionMatch(value, cursorPos) {
+    const textBefore = value.slice(0, cursorPos);
+    const match = textBefore.match(/@([\w ]*)$/);
+    if (!match) return null;
+    return { partial: match[1].toLowerCase(), startIndex: cursorPos - match[0].length };
+  }
+
+  function getMentionCandidates(partial) {
+    const results = [];
+    profilesCache.forEach((profile, uid) => {
+      if (uid === currentUid) return;
+      const name = profile.displayName || '';
+      if (!partial || name.toLowerCase().startsWith(partial) || name.toLowerCase().includes(partial)) {
+        results.push({ uid, displayName: name, avatar: profile.avatar });
+      }
+    });
+    results.sort((a, b) => {
+      const ao = isUserOnline(a.uid) ? 0 : 1;
+      const bo = isUserOnline(b.uid) ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      return (a.displayName || '').localeCompare(b.displayName || '');
+    });
+    return results.slice(0, 8);
+  }
+
+  function showMentionDropdown(candidates) {
+    if (!mentionDropdownEl) return;
+    mentionDropdownEl.innerHTML = '';
+    if (!candidates.length) { mentionDropdownEl.classList.add('hidden'); return; }
+    mentionActiveIndex = 0;
+    candidates.forEach((c, i) => {
+      const item = document.createElement('div');
+      item.className = 'mention-dropdown__item' + (i === 0 ? ' mention-dropdown__item--active' : '');
+      item.setAttribute('role', 'option');
+      item.dataset.displayName = c.displayName;
+      const hasEmoji = c.avatar && AVATAR_OPTIONS.includes(c.avatar);
+      const avatarEl = document.createElement('div');
+      avatarEl.className = 'mention-dropdown__avatar';
+      if (hasEmoji) {
+        avatarEl.textContent = c.avatar;
+      } else {
+        avatarEl.style.background = getAvatarColor(c.displayName);
+        avatarEl.style.color = '#fff';
+        avatarEl.style.fontSize = '0.7rem';
+        avatarEl.style.fontWeight = '700';
+        avatarEl.textContent = getInitials(c.displayName);
+      }
+      const nameEl = document.createElement('span');
+      nameEl.className = 'mention-dropdown__name';
+      nameEl.textContent = c.displayName;
+      item.appendChild(avatarEl);
+      item.appendChild(nameEl);
+      if (isUserOnline(c.uid)) {
+        const dot = document.createElement('span');
+        dot.className = 'mention-dropdown__online';
+        item.appendChild(dot);
+      }
+      item.addEventListener('mousedown', (e) => { e.preventDefault(); insertMention(c.displayName); });
+      mentionDropdownEl.appendChild(item);
+    });
+    mentionDropdownEl.classList.remove('hidden');
+  }
+
+  function hideMentionDropdown() {
+    if (mentionDropdownEl) mentionDropdownEl.classList.add('hidden');
+    mentionAnchorIndex = -1;
+    mentionActiveIndex = -1;
+  }
+
+  function insertMention(displayName) {
+    if (mentionAnchorIndex < 0) return;
+    const cursorPos = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, mentionAnchorIndex);
+    const after = input.value.slice(cursorPos);
+    input.value = before + '@' + displayName + ' ' + after;
+    const newCursor = mentionAnchorIndex + displayName.length + 2;
+    input.setSelectionRange(newCursor, newCursor);
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+    hideMentionDropdown();
+    input.focus();
+  }
+
+  function updateMentionDropdown() {
+    const cursorPos = input.selectionStart ?? input.value.length;
+    const match = getActiveMentionMatch(input.value, cursorPos);
+    if (!match) { hideMentionDropdown(); return; }
+    mentionAnchorIndex = match.startIndex;
+    showMentionDropdown(getMentionCandidates(match.partial));
+  }
+
+  function handleMentionKeydown(e) {
+    if (!mentionDropdownEl || mentionDropdownEl.classList.contains('hidden')) return false;
+    const items = mentionDropdownEl.querySelectorAll('.mention-dropdown__item');
+    if (!items.length) return false;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionActiveIndex = Math.min(mentionActiveIndex + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('mention-dropdown__item--active', i === mentionActiveIndex));
+      return true;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionActiveIndex = Math.max(mentionActiveIndex - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('mention-dropdown__item--active', i === mentionActiveIndex));
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      const active = items[mentionActiveIndex];
+      if (active) { e.preventDefault(); insertMention(active.dataset.displayName); return true; }
+    }
+    if (e.key === 'Escape') { hideMentionDropdown(); return true; }
+    return false;
+  }
+
+  // ── Direct Messages ────────────────────────────────────
+  function getConversationId(uid1, uid2) {
+    return [uid1, uid2].sort().join('_');
+  }
+
+  function updateDMHeader() {
+    if (!currentDMPartnerUid) return;
+    const profile = profilesCache.get(currentDMPartnerUid) || {};
+    const name = profile.displayName || 'User';
+    const avatar = profile.avatar;
+    const online = isUserOnline(currentDMPartnerUid);
+    if (dmUserNameEl) dmUserNameEl.textContent = name;
+    if (dmUserStatusEl) dmUserStatusEl.textContent = online ? 'Online' : 'Offline';
+    if (dmUserAvatarEl) {
+      dmUserAvatarEl.textContent = (avatar && AVATAR_OPTIONS.includes(avatar)) ? avatar : '\ud83d\udc64';
+      // Update or create presence dot
+      const wrap = document.getElementById('dm-user-avatar-wrap');
+      if (wrap) {
+        let dot = wrap.querySelector('.dm-presence-dot');
+        if (!dot) {
+          dot = document.createElement('span');
+          wrap.appendChild(dot);
+        }
+        dot.className = `dm-presence-dot${online ? '' : ' dm-presence-dot--offline'}`;
+      }
+    }
+  }
+
+  function renderDMMessages(snapshot, currentUser) {
+    const atBottom = dmMessagesEl.scrollHeight - dmMessagesEl.scrollTop - dmMessagesEl.clientHeight < 150;
+    dmMessagesEl.innerHTML = '';
+    if (snapshot.empty) {
+      dmMessagesEl.innerHTML = '<p class="dm-messages-empty">No messages yet. Say hello! \ud83d\udc4b</p>';
+      return;
+    }
+    snapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      const isOwn = currentUser && data.uid === currentUser.uid;
+      const displayName = data.displayName || 'User';
+      const time = data.createdAt?.toDate
+        ? data.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+      let mediaContent;
+      if (data.type === 'gif') {
+        const gifUrl = isValidGiphyUrl(data.gifUrl || '') ? data.gifUrl : null;
+        mediaContent = gifUrl
+          ? `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`
+          : '<div class="msg__text">[GIF]</div>';
+      } else if (data.type === 'sticker') {
+        mediaContent = `<div class="msg__sticker">${escapeHtml(data.sticker || '')}</div>`;
+      } else if (data.type === 'voice') {
+        const safeUrl = isValidStorageUrl(data.audioUrl || '') ? data.audioUrl : '';
+        mediaContent = safeUrl
+          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeUrl)}" controls preload="none"></audio></div>`
+          : '<div class="msg__text">[Voice message]</div>';
+      } else {
+        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
+      }
+      const wrapper = document.createElement('div');
+      wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
+      if (isOwn) {
+        wrapper.innerHTML = `<div class="msg__body"><div class="msg__bubble">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
+      } else {
+        const hasEmoji = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
+        const avatarHtml = hasEmoji
+          ? `<div class="msg__avatar msg__avatar--emoji">${escapeHtml(data.avatar)}</div>`
+          : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}">${escapeHtml(getInitials(displayName))}</div>`;
+        const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
+        wrapper.innerHTML = `${avatarHtml}<div class="msg__content"><div class="msg__name">${escapeHtml(displayName)}</div><div class="msg__bubble" style="${bubbleStyle}">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
+      }
+      dmMessagesEl.appendChild(wrapper);
+    });
+    if (atBottom) dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
+  }
+
+  function subscribeDMMessages(conversationId, user) {
+    if (unsubscribeDMMessages) { unsubscribeDMMessages(); unsubscribeDMMessages = null; }
+    dmMessagesEl.innerHTML = '<p class="dm-messages-empty">Loading\u2026</p>';
+    unsubscribeDMMessages = db
+      .collection('directMessages').doc(conversationId)
+      .collection('messages').orderBy('createdAt', 'asc').limitToLast(100)
+      .onSnapshot((snap) => renderDMMessages(snap, user));
+  }
+
+  async function sendDMMessage(text) {
+    const user = auth.currentUser;
+    if (!text || !user || !cachedIsAllowed || !currentDMConversationId || !currentDMPartnerUid) return;
+    try {
+      const convRef = db.collection('directMessages').doc(currentDMConversationId);
+      const convSnap = await convRef.get();
+      if (!convSnap.exists) {
+        await convRef.set({
+          participants: [user.uid, currentDMPartnerUid].sort(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastMessage: '',
+        });
+      }
+      await convRef.collection('messages').add({
+        text,
+        uid: user.uid,
+        displayName: currentProfile.displayName || user.displayName || user.email || 'User',
+        avatar: currentProfile.avatar,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await convRef.update({
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastMessage: text.slice(0, 100),
+      });
+      clearTypingStatus(user.uid);
+    } catch (err) {
+      console.error('DM send failed:', err);
+    }
+  }
+
+  function openDM(partnerUid) {
+    const user = auth.currentUser;
+    if (!user || partnerUid === user.uid || !cachedIsAllowed) return;
+    currentDMPartnerUid = partnerUid;
+    currentDMConversationId = getConversationId(user.uid, partnerUid);
+    usersPanelEl.classList.add('hidden');
+    updateDMHeader();
+    subscribeDMMessages(currentDMConversationId, user);
+    subscribeDMTyping(currentDMConversationId, user.uid);
+    dmPanelEl.classList.remove('hidden');
+    dmInputEl?.focus();
+  }
+
+  function closeDMPanel() {
+    if (unsubscribeDMMessages) { unsubscribeDMMessages(); unsubscribeDMMessages = null; }
+    if (unsubscribeDMTyping) { unsubscribeDMTyping(); unsubscribeDMTyping = null; }
+    if (currentUid && currentTypingRoomId === currentDMConversationId) clearTypingStatus(currentUid);
+    currentDMPartnerUid = null;
+    currentDMConversationId = null;
+    dmPanelEl.classList.add('hidden');
+    if (dmMessagesEl) dmMessagesEl.innerHTML = '';
+  }
+
+  // ── Users panel ────────────────────────────────────────
+  function renderUsersList() {
+    if (!usersPanelListEl) return;
+    usersPanelListEl.innerHTML = '';
+    const users = [];
+    profilesCache.forEach((profile, uid) => {
+      if (uid === currentUid) return;
+      users.push({ uid, ...profile });
+    });
+    if (!users.length) {
+      usersPanelListEl.innerHTML = '<p class="users-panel__empty">No other users found.</p>';
+      return;
+    }
+    users.sort((a, b) => {
+      const ao = isUserOnline(a.uid) ? 0 : 1;
+      const bo = isUserOnline(b.uid) ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      return (a.displayName || '').localeCompare(b.displayName || '');
+    });
+    users.forEach((u) => {
+      const online = isUserOnline(u.uid);
+      const item = document.createElement('div');
+      item.className = 'user-list-item';
+      const hasEmoji = u.avatar && AVATAR_OPTIONS.includes(u.avatar);
+      let avatarInner;
+      if (hasEmoji) {
+        avatarInner = `<span class="user-list-item__emoji">${escapeHtml(u.avatar)}</span>`;
+      } else {
+        const bg = getAvatarColor(u.displayName || '');
+        avatarInner = `<span class="user-list-item__avatar--initials" style="background:${bg};color:#fff;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;">${escapeHtml(getInitials(u.displayName || ''))}</span>`;
+      }
+      item.innerHTML = `
+        <div class="user-list-item__avatar">
+          ${avatarInner}
+          <span class="user-list-item__presence${online ? '' : ' user-list-item__presence--offline'}"></span>
+        </div>
+        <div class="user-list-item__info">
+          <div class="user-list-item__name">${escapeHtml(u.displayName || 'User')}</div>
+          <div class="user-list-item__status">${online ? 'Online' : 'Offline'}</div>
+        </div>
+        <button type="button" class="user-list-item__dm-btn">Message</button>`;
+      item.querySelector('.user-list-item__dm-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDM(u.uid);
+      });
+      item.addEventListener('click', () => openDM(u.uid));
+      usersPanelListEl.appendChild(item);
+    });
+  }
+
+  usersBtnEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasHidden = usersPanelEl.classList.contains('hidden');
+    usersPanelEl.classList.toggle('hidden', !wasHidden);
+    if (wasHidden) renderUsersList();
+  });
+  document.getElementById('users-panel-close-btn').addEventListener('click', () => usersPanelEl.classList.add('hidden'));
+  usersPanelEl.addEventListener('click', (e) => { if (e.target === usersPanelEl) usersPanelEl.classList.add('hidden'); });
+
+  dmBackBtn.addEventListener('click', closeDMPanel);
+
+  dmFormEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = dmInputEl.value.trim();
+    if (!text) return;
+    dmInputEl.value = '';
+    dmInputEl.style.height = 'auto';
+    await sendDMMessage(text);
+  });
+
+  dmInputEl.addEventListener('input', () => {
+    dmInputEl.style.height = 'auto';
+    dmInputEl.style.height = dmInputEl.scrollHeight + 'px';
+    const uid = auth.currentUser?.uid;
+    if (uid && cachedIsAllowed && currentDMConversationId && dmInputEl.value.trim()) {
+      handleTypingInput(uid, currentDMConversationId);
+    }
+  });
+
+  dmInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      dmFormEl.requestSubmit();
+    }
+  });
+
+  // Visibility change for presence
+  document.addEventListener('visibilitychange', () => {
+    if (!currentUid) return;
+    if (document.hidden) {
+      setUserPresence(currentUid, false);
+    } else {
+      setUserPresence(currentUid, true);
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (currentUid) setUserPresence(currentUid, false);
+  });
+
   // ── FCM push notifications ────────────────────────────
   async function setupFCM(uid) {
     if (!('serviceWorker' in navigator)) return;
@@ -1318,8 +1892,20 @@
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePending) { unsubscribePending(); unsubscribePending = null; }
     if (unsubscribeProfiles) { unsubscribeProfiles(); unsubscribeProfiles = null; }
+    if (unsubscribePresence) { unsubscribePresence(); unsubscribePresence = null; }
+    if (unsubscribeTyping) { unsubscribeTyping(); unsubscribeTyping = null; }
     if (seenObserver) { seenObserver.disconnect(); seenObserver = null; }
     if (mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
+
+    // Clean up presence/typing for the previous user
+    if (currentUid) {
+      stopPresence(currentUid);
+      clearTypingStatus(currentUid);
+      currentUid = null;
+    }
+    closeDMPanel();
+    usersPanelEl.classList.add('hidden');
+    presenceCache.clear();
     profilesCache.clear();
     pendingSeenUpdates.clear();
     cachedIsAllowed = false;
@@ -1354,9 +1940,17 @@
     setupFCM(user.uid);
     loadProfile(user.uid);
 
+    currentUid = user.uid;
+    usersBtnEl.classList.remove('hidden');
+
     unsubscribeProfiles = db.collection('userProfiles').onSnapshot((snap) => {
       snap.docs.forEach((doc) => profilesCache.set(doc.id, doc.data()));
+      // Start presence after profiles load so displayName is set
+      if (!presenceHeartbeatInterval) startPresence(user.uid);
     });
+
+    subscribePresence();
+    subscribeMainTyping(user.uid);
 
     if (isAdmin) {
       adminBtn.classList.remove('hidden');

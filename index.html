@@ -91,6 +91,16 @@
         <span>KidsChat</span>
       </div>
       <div class="chat-header__actions">
+        <button id="users-btn" class="btn-users hidden" title="Users" aria-label="Users">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+          <span id="users-badge" class="users-badge hidden">0</span>
+        </button>
         <button id="admin-btn" class="btn-admin hidden" title="Pending approvals" aria-label="Pending approvals">👥<span
             id="admin-badge" class="admin-badge hidden">0</span></button>
         <button id="profile-btn" class="btn-profile" title="Edit profile" aria-label="Edit profile">
@@ -119,6 +129,7 @@
     </div>
 
     <div id="messages" aria-live="polite"></div>
+    <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Picker panels -->
     <div id="emoji-panel" class="picker-panel hidden">
@@ -139,6 +150,7 @@
     </div>
 
     <div class="composer">
+      <div id="mention-dropdown" class="mention-dropdown hidden" role="listbox" aria-label="Mention a user"></div>
       <div id="reply-preview" class="reply-preview hidden">
         <div class="reply-preview__bar"></div>
         <div class="reply-preview__content">
@@ -195,6 +207,48 @@
           <button id="admin-panel-close-btn" type="button" class="admin-panel__close" aria-label="Close">✕</button>
         </div>
         <div id="admin-panel-list" class="admin-panel__list"></div>
+      </div>
+    </div>
+
+    <!-- Users panel -->
+    <div id="users-panel" class="users-panel hidden" role="dialog" aria-label="Users">
+      <div class="users-panel__inner">
+        <div class="users-panel__header">
+          <h2 class="users-panel__title">Users</h2>
+          <button id="users-panel-close-btn" type="button" class="users-panel__close" aria-label="Close">✕</button>
+        </div>
+        <div id="users-panel-list" class="users-panel__list"></div>
+      </div>
+    </div>
+
+    <!-- DM panel -->
+    <div id="dm-panel" class="dm-panel hidden" role="dialog" aria-label="Direct message">
+      <div class="dm-panel__header">
+        <button id="dm-back-btn" type="button" class="dm-back-btn" aria-label="Back">&#8592;</button>
+        <div class="dm-user-info">
+          <div id="dm-user-avatar-wrap" class="dm-user-avatar-wrap">
+            <span id="dm-user-avatar" class="dm-user-avatar" aria-hidden="true"></span>
+          </div>
+          <div>
+            <div id="dm-user-name" class="dm-user-name"></div>
+            <div id="dm-user-status" class="dm-user-status"></div>
+          </div>
+        </div>
+      </div>
+      <div id="dm-messages" class="dm-messages" aria-live="polite"></div>
+      <div id="dm-typing-indicator" class="dm-typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
+      <div class="dm-composer">
+        <form id="dm-form">
+          <textarea id="dm-input" maxlength="500" placeholder="Message…" required autocomplete="off"
+            rows="1"></textarea>
+          <button type="submit" class="btn-send" aria-label="Send message">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </form>
       </div>
     </div>
 
