@@ -325,6 +325,11 @@
     <div class="modal-card">
       <h2 class="modal-title">Edit Profile</h2>
       <div id="avatar-preview" class="avatar-preview">😀</div>
+      <div class="avatar-photo-btns">
+        <input type="file" id="avatar-photo-input" accept="image/*" class="hidden" aria-hidden="true">
+        <button type="button" id="avatar-upload-photo-btn" class="btn-avatar-upload">📷 Upload photo</button>
+        <button type="button" id="avatar-remove-photo-btn" class="btn-avatar-remove hidden">✕ Remove photo</button>
+      </div>
       <div id="avatar-grid" class="avatar-grid"></div>
       <label class="profile-label" for="profile-name-input">Display name</label>
       <input id="profile-name-input" type="text" class="profile-name-input" maxlength="30" placeholder="Your name"

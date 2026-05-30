@@ -112,8 +112,10 @@
   let unsubscribeMessages = null;
   let swRegistration = null;
   let sessionStart = null;
-  let currentProfile = { avatar: '😀', displayName: '' };
+  let currentProfile = { avatar: '😀', displayName: '', avatarUrl: '' };
   let profileSelectedAvatar = '😀';
+  let pendingAvatarFile = null;
+  let pendingAvatarClear = false;
   let replyTo = null;
   let pendingPhotos = [];
   let dmPendingPhotos = [];
@@ -310,6 +312,16 @@
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
   }
 
+  function renderAvatarHtml(avatar, avatarUrl, displayName) {
+    if (avatarUrl && isValidStorageUrl(avatarUrl)) {
+      return `<div class="msg__avatar msg__avatar--photo" aria-hidden="true"><img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy"></div>`;
+    }
+    if (avatar && AVATAR_OPTIONS.includes(avatar)) {
+      return `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(avatar)}</div>`;
+    }
+    return `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}" aria-hidden="true">${escapeHtml(getInitials(displayName))}</div>`;
+  }
+
   function getBubbleStyle(uid) {
     let hash = 0;
     for (let i = 0; i < uid.length; i++) hash = uid.charCodeAt(i) + ((hash << 5) - hash);
@@ -404,7 +416,11 @@
           const avatars = viewerUids.slice(0, 5).map((uid) => {
             const profile = profilesCache.get(uid);
             const av = profile?.avatar;
+            const avUrl = profile?.avatarUrl;
             const name = escapeHtml(String(profile?.displayName || '').slice(0, 30));
+            if (avUrl && isValidStorageUrl(avUrl)) {
+              return `<span class="msg__seen-avatar msg__seen-avatar--photo" title="${name}"><img src="${escapeHtml(avUrl)}" alt="" loading="lazy"></span>`;
+            }
             if (av && AVATAR_OPTIONS.includes(av)) {
               return `<span class="msg__seen-avatar msg__seen-avatar--emoji" title="${name}">${escapeHtml(av)}</span>`;
             }
@@ -429,10 +445,7 @@
             ${seenHtml}
           </div>`;
       } else {
-        const hasEmojiAvatar = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
-        const avatarHtml = hasEmojiAvatar
-          ? `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(data.avatar)}</div>`
-          : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}" aria-hidden="true">${escapeHtml(getInitials(displayName))}</div>`;
+        const avatarHtml = renderAvatarHtml(data.avatar, data.avatarUrl, displayName);
         const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
         wrapper.innerHTML = `
           ${avatarHtml}
@@ -685,6 +698,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) messageData.replyTo = replyTo;
@@ -737,6 +751,7 @@
       if (snap.exists) {
         const data = snap.data();
         currentProfile.avatar = AVATAR_OPTIONS.includes(data.avatar) ? data.avatar : '😀';
+        currentProfile.avatarUrl = isValidStorageUrl(data.avatarUrl || '') ? (data.avatarUrl || '') : '';
         currentProfile.displayName = String(data.displayName || '').slice(0, 30);
       } else {
         const user = auth.currentUser;
@@ -759,17 +774,33 @@
   }
 
   function syncProfileUI() {
-    if (userAvatarEl) userAvatarEl.textContent = currentProfile.avatar;
+    if (userAvatarEl) {
+      if (currentProfile.avatarUrl && isValidStorageUrl(currentProfile.avatarUrl)) {
+        userAvatarEl.innerHTML = `<img src="${escapeHtml(currentProfile.avatarUrl)}" alt="" class="user-avatar__img">`;
+      } else {
+        userAvatarEl.innerHTML = '';
+        userAvatarEl.textContent = currentProfile.avatar;
+      }
+    }
     if (userNameEl) userNameEl.textContent = currentProfile.displayName;
   }
 
   function openProfileModal() {
     profileSelectedAvatar = currentProfile.avatar;
-    avatarPreviewEl.textContent = currentProfile.avatar;
+    pendingAvatarFile = null;
+    pendingAvatarClear = false;
+    if (currentProfile.avatarUrl && isValidStorageUrl(currentProfile.avatarUrl)) {
+      avatarPreviewEl.innerHTML = `<img src="${escapeHtml(currentProfile.avatarUrl)}" alt="Profile photo" class="avatar-preview__img">`;
+    } else {
+      avatarPreviewEl.innerHTML = '';
+      avatarPreviewEl.textContent = currentProfile.avatar;
+    }
     profileNameInput.value = currentProfile.displayName;
     avatarGridEl.querySelectorAll('.avatar-option').forEach((btn) => {
       btn.classList.toggle('avatar-option--selected', btn.dataset.emoji === currentProfile.avatar);
     });
+    const removeBtn = document.getElementById('avatar-remove-photo-btn');
+    if (removeBtn) removeBtn.classList.toggle('hidden', !currentProfile.avatarUrl);
     profileModal.classList.remove('hidden');
   }
 
@@ -782,17 +813,34 @@
     if (!user) return;
     const name = profileNameInput.value.trim();
     if (!name) { profileNameInput.focus(); return; }
+    let newAvatarUrl = currentProfile.avatarUrl;
+    const saveBtn = document.getElementById('profile-save-btn');
+    if (saveBtn) saveBtn.disabled = true;
     try {
+      if (pendingAvatarFile) {
+        const ext = (pendingAvatarFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const storageRef = storage.ref(`avatars/${user.uid}/avatar.${ext || 'jpg'}`);
+        const snapshot = await storageRef.put(pendingAvatarFile, { contentType: pendingAvatarFile.type });
+        newAvatarUrl = await snapshot.ref.getDownloadURL();
+      } else if (pendingAvatarClear) {
+        newAvatarUrl = '';
+      }
       await db.collection('userProfiles').doc(user.uid).set({
         avatar: profileSelectedAvatar,
+        avatarUrl: newAvatarUrl,
         displayName: name,
       });
       currentProfile.avatar = profileSelectedAvatar;
+      currentProfile.avatarUrl = newAvatarUrl;
       currentProfile.displayName = name;
+      pendingAvatarFile = null;
+      pendingAvatarClear = false;
       syncProfileUI();
       closeProfileModal();
     } catch (err) {
       console.error('Failed to save profile:', err);
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
     }
   }
 
@@ -804,7 +852,11 @@
     btn.textContent = emoji;
     btn.addEventListener('click', () => {
       profileSelectedAvatar = emoji;
+      pendingAvatarFile = null;
+      pendingAvatarClear = true;
+      avatarPreviewEl.innerHTML = '';
       avatarPreviewEl.textContent = emoji;
+      document.getElementById('avatar-remove-photo-btn')?.classList.add('hidden');
       avatarGridEl.querySelectorAll('.avatar-option').forEach((b) => {
         b.classList.toggle('avatar-option--selected', b.dataset.emoji === emoji);
       });
@@ -818,6 +870,38 @@
   });
   document.getElementById('profile-cancel-btn').addEventListener('click', closeProfileModal);
   document.getElementById('profile-save-btn').addEventListener('click', saveProfile);
+
+  const avatarPhotoInput = document.getElementById('avatar-photo-input');
+  const avatarUploadBtn = document.getElementById('avatar-upload-photo-btn');
+  const avatarRemoveBtn = document.getElementById('avatar-remove-photo-btn');
+  if (avatarUploadBtn && avatarPhotoInput) {
+    avatarUploadBtn.addEventListener('click', () => avatarPhotoInput.click());
+    avatarPhotoInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) return;
+      if (file.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return; }
+      pendingAvatarFile = file;
+      pendingAvatarClear = false;
+      const previewUrl = URL.createObjectURL(file);
+      avatarPreviewEl.innerHTML = `<img src="${previewUrl}" alt="Profile photo preview" class="avatar-preview__img">`;
+      avatarGridEl.querySelectorAll('.avatar-option').forEach((b) => b.classList.remove('avatar-option--selected'));
+      if (avatarRemoveBtn) avatarRemoveBtn.classList.remove('hidden');
+      avatarPhotoInput.value = '';
+    });
+  }
+  if (avatarRemoveBtn) {
+    avatarRemoveBtn.addEventListener('click', () => {
+      pendingAvatarFile = null;
+      pendingAvatarClear = true;
+      avatarPreviewEl.innerHTML = '';
+      avatarPreviewEl.textContent = profileSelectedAvatar;
+      avatarGridEl.querySelectorAll('.avatar-option').forEach((b) => {
+        b.classList.toggle('avatar-option--selected', b.dataset.emoji === profileSelectedAvatar);
+      });
+      avatarRemoveBtn.classList.add('hidden');
+    });
+  }
 
   function closeAllPickers() {
     mediaPickerModal.classList.add('hidden');
@@ -863,6 +947,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) stickerData.replyTo = replyTo;
@@ -987,6 +1072,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) gifData.replyTo = replyTo;
@@ -1570,7 +1656,13 @@
     if (dmUserNameEl) dmUserNameEl.textContent = name;
     if (dmUserStatusEl) dmUserStatusEl.textContent = online ? 'Online' : 'Offline';
     if (dmUserAvatarEl) {
-      dmUserAvatarEl.textContent = (avatar && AVATAR_OPTIONS.includes(avatar)) ? avatar : '\ud83d\udc64';
+      const dmAvUrl = profile.avatarUrl;
+      if (dmAvUrl && isValidStorageUrl(dmAvUrl)) {
+        dmUserAvatarEl.innerHTML = `<img src="${escapeHtml(dmAvUrl)}" alt="" class="user-avatar__img">`;
+      } else {
+        dmUserAvatarEl.innerHTML = '';
+        dmUserAvatarEl.textContent = (avatar && AVATAR_OPTIONS.includes(avatar)) ? avatar : '\ud83d\udc64';
+      }
       // Update or create presence dot
       const wrap = document.getElementById('dm-user-avatar-wrap');
       if (wrap) {
@@ -1624,10 +1716,7 @@
       if (isOwn) {
         wrapper.innerHTML = `<div class="msg__body"><div class="msg__bubble">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
       } else {
-        const hasEmoji = data.avatar && AVATAR_OPTIONS.includes(data.avatar);
-        const avatarHtml = hasEmoji
-          ? `<div class="msg__avatar msg__avatar--emoji">${escapeHtml(data.avatar)}</div>`
-          : `<div class="msg__avatar" style="background:${getAvatarColor(displayName)}">${escapeHtml(getInitials(displayName))}</div>`;
+        const avatarHtml = renderAvatarHtml(data.avatar, data.avatarUrl, displayName);
         const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
         wrapper.innerHTML = `${avatarHtml}<div class="msg__content"><div class="msg__name">${escapeHtml(displayName)}</div><div class="msg__bubble" style="${bubbleStyle}">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
       }
@@ -1663,6 +1752,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'User',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       await convRef.update({
@@ -2069,6 +2159,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       };
       if (replyTo) voiceData.replyTo = replyTo;
@@ -2105,6 +2196,7 @@
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
         avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       };
       if (isDM) {
