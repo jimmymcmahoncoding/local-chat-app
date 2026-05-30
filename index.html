@@ -138,22 +138,29 @@
     <div id="messages" aria-live="polite"></div>
     <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Picker panels -->
-    <div id="emoji-panel" class="picker-panel hidden">
-      <emoji-picker></emoji-picker>
-    </div>
-    <div id="gif-panel" class="picker-panel hidden">
-      <div class="gif-panel__header">
-        <input id="gif-search-input" type="search" placeholder="Search GIFs…" autocomplete="off" />
+    <!-- Unified media picker modal -->
+    <div id="media-picker-modal" class="media-picker-modal hidden">
+      <div class="media-picker-modal__tabs" role="tablist">
+        <button type="button" class="media-picker-tab media-picker-tab--active" role="tab" data-tab="emoji" aria-selected="true">😊 Emoji</button>
+        <button type="button" class="media-picker-tab" role="tab" data-tab="gif" aria-selected="false">GIF</button>
+        <button type="button" class="media-picker-tab" role="tab" data-tab="sticker" aria-selected="false">🎭 Stickers</button>
       </div>
-      <div id="gif-results" class="gif-results"></div>
-      <div id="gif-load-more" class="gif-load-more hidden">
-        <button type="button">Load more</button>
+      <div id="emoji-panel" class="picker-panel" role="tabpanel">
+        <emoji-picker></emoji-picker>
       </div>
-    </div>
-    <div id="sticker-panel" class="picker-panel hidden">
-      <div id="sticker-tabs" class="sticker-tabs"></div>
-      <div id="sticker-grid" class="sticker-grid"></div>
+      <div id="gif-panel" class="picker-panel hidden" role="tabpanel">
+        <div class="gif-panel__header">
+          <input id="gif-search-input" type="search" placeholder="Search GIFs…" autocomplete="off" />
+        </div>
+        <div id="gif-results" class="gif-results"></div>
+        <div id="gif-load-more" class="gif-load-more hidden">
+          <button type="button">Load more</button>
+        </div>
+      </div>
+      <div id="sticker-panel" class="picker-panel hidden" role="tabpanel">
+        <div id="sticker-tabs" class="sticker-tabs"></div>
+        <div id="sticker-grid" class="sticker-grid"></div>
+      </div>
     </div>
 
     <div class="composer">
@@ -168,12 +175,7 @@
       </div>
       <input type="file" id="photo-input" accept="image/*" class="hidden" aria-hidden="true">
       <form id="message-form">
-        <button type="button" id="emoji-btn" class="btn-composer-icon" aria-label="Add emoji"
-          title="Add emoji">😊</button>
-        <button type="button" id="gif-btn" class="btn-composer-gif" aria-label="Send a GIF"
-          title="Send a GIF">GIF</button>
-        <button type="button" id="sticker-btn" class="btn-composer-icon" aria-label="Send a sticker"
-          title="Send a sticker">🎭</button>
+        <button type="button" id="media-picker-btn" class="btn-composer-icon" aria-label="Add emoji, GIF or sticker" title="Add emoji, GIF or sticker">😊</button>
         <textarea id="message-input" maxlength="500" placeholder="Message…" required autocomplete="off"
           rows="1"></textarea>
         <button type="button" id="newline-btn" class="btn-composer-icon" aria-label="New line"

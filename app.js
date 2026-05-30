@@ -39,9 +39,8 @@
   const messageStatus = document.getElementById('message-status');
   const form = document.getElementById('message-form');
   const input = document.getElementById('message-input');
-  const emojiBtn = document.getElementById('emoji-btn');
-  const gifBtn = document.getElementById('gif-btn');
-  const stickerBtn = document.getElementById('sticker-btn');
+  const mediaPickerBtn = document.getElementById('media-picker-btn');
+  const mediaPickerModal = document.getElementById('media-picker-modal');
   const newlineBtn = document.getElementById('newline-btn');
   const emojiPanel = document.getElementById('emoji-panel');
   const gifPanel = document.getElementById('gif-panel');
@@ -713,7 +712,7 @@
 
   input.addEventListener('keydown', (e) => {
     if (handleMentionKeydown(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !window.matchMedia('(pointer: coarse)').matches) {
       e.preventDefault();
       form.requestSubmit();
     }
@@ -819,9 +818,7 @@
   document.getElementById('profile-save-btn').addEventListener('click', saveProfile);
 
   function closeAllPickers() {
-    emojiPanel.classList.add('hidden');
-    gifPanel.classList.add('hidden');
-    stickerPanel.classList.add('hidden');
+    mediaPickerModal.classList.add('hidden');
   }
 
   // ── Sticker panel ───────────────────────────────────────
@@ -875,14 +872,7 @@
     }
   }
 
-  stickerBtn.addEventListener('click', () => {
-    const wasHidden = stickerPanel.classList.contains('hidden');
-    closeAllPickers();
-    if (wasHidden) {
-      renderStickerPanel();
-      stickerPanel.classList.remove('hidden');
-    }
-  });
+
 
   function setReply(data, docId) {
     let replyText;
@@ -1006,19 +996,30 @@
     }
   }
 
-  emojiBtn.addEventListener('click', () => {
-    const wasHidden = emojiPanel.classList.contains('hidden');
-    closeAllPickers();
-    if (wasHidden) emojiPanel.classList.remove('hidden');
-  });
+  function showPickerTab(name) {
+    emojiPanel.classList.toggle('hidden', name !== 'emoji');
+    gifPanel.classList.toggle('hidden', name !== 'gif');
+    stickerPanel.classList.toggle('hidden', name !== 'sticker');
+    mediaPickerModal.querySelectorAll('.media-picker-tab').forEach(t => {
+      t.classList.toggle('media-picker-tab--active', t.dataset.tab === name);
+      t.setAttribute('aria-selected', t.dataset.tab === name ? 'true' : 'false');
+    });
+    if (name === 'gif' && !gifResults.firstChild) fetchGifs('', 0);
+    if (name === 'sticker') renderStickerPanel();
+  }
 
-  gifBtn.addEventListener('click', () => {
-    const wasHidden = gifPanel.classList.contains('hidden');
+  mediaPickerBtn.addEventListener('click', () => {
+    const wasHidden = mediaPickerModal.classList.contains('hidden');
     closeAllPickers();
     if (wasHidden) {
-      gifPanel.classList.remove('hidden');
-      if (!gifResults.firstChild) fetchGifs('', 0);
+      mediaPickerModal.classList.remove('hidden');
+      const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
+      showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
     }
+  });
+
+  mediaPickerModal.querySelectorAll('.media-picker-tab').forEach(tab => {
+    tab.addEventListener('click', () => showPickerTab(tab.dataset.tab));
   });
 
   messagesEl.addEventListener('click', closeAllPickers);
@@ -1874,7 +1875,7 @@
   });
 
   dmInputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !window.matchMedia('(pointer: coarse)').matches) {
       e.preventDefault();
       dmFormEl.requestSubmit();
     }

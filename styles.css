@@ -524,6 +524,46 @@ body {
 }
 
 /* ── Picker panels ───────────────────────────────────────── */
+/* ── Unified media picker modal ──────────────────────────── */
+.media-picker-modal {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--composer-bg);
+}
+
+.media-picker-modal__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.media-picker-tab {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--muted);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.media-picker-tab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+.media-picker-tab:hover:not(.media-picker-tab--active) {
+  color: var(--text);
+}
+
+.media-picker-modal .picker-panel {
+  border-top: none;
+}
+
 .picker-panel {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
