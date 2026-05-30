@@ -600,7 +600,9 @@
         const body = message.type === 'voice'
           ? '🎤 Voice message'
           : String(message.text || '').trim() || 'New message received';
-        showNotification(`${sender} sent a message`, body);
+        const isMentioned = Array.isArray(message.mentions) && message.mentions.includes(signedInUser.uid);
+        const title = isMentioned ? `${sender} mentioned you!` : `${sender} sent a message`;
+        showNotification(title, body);
       });
   }
 
@@ -647,6 +649,8 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) messageData.replyTo = replyTo;
+      const mentionedUids = extractMentionedUids(text);
+      if (mentionedUids.length) messageData.mentions = mentionedUids;
       await db.collection('messages').add(messageData);
       input.value = '';
       input.style.height = 'auto';
@@ -1331,6 +1335,15 @@
   }
 
   // ── @Mention autocomplete ──────────────────────────────
+  function extractMentionedUids(text) {
+    const uids = [];
+    profilesCache.forEach((profile, uid) => {
+      const name = profile.displayName;
+      if (name && text.includes('@' + name)) uids.push(uid);
+    });
+    return uids;
+  }
+
   function renderTextWithMentions(text, currentDisplayName) {
     let escaped = escapeHtml(text);
     const names = new Set();

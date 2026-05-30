@@ -52,49 +52,73 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     console.log(`Tokens to notify: ${tokens.length}`);
     if (!tokens.length) return;
 
-    const response = await getMessaging().sendEachForMulticast({
-        tokens,
-        notification: {
-            title: `${senderName} sent a message`,
-            body,
-        },
-        data: {
-            messageId,
-        },
-        webpush: {
-            notification: {
-                icon: notificationIcon,
-                badge: notificationIcon,
-                tag: `msg-${messageId}`,
-                renotify: false,
-            },
-            fcmOptions: { link: 'https://kidschat-family.vercel.app/' },
-        },
+    const mentions = Array.isArray(data.mentions) ? data.mentions : [];
+    const mentionedTokens = [];
+    const otherTokens = [];
+    recipientsByToken.forEach((docIds, token) => {
+        if (docIds.some((uid) => mentions.includes(uid))) {
+            mentionedTokens.push(token);
+        } else {
+            otherTokens.push(token);
+        }
     });
+
+    const webpushConfig = {
+        notification: {
+            icon: notificationIcon,
+            badge: notificationIcon,
+            tag: `msg-${messageId}`,
+            renotify: false,
+        },
+        fcmOptions: { link: 'https://kidschat-family.vercel.app/' },
+    };
+
+    const allResponses = [];
+    if (mentionedTokens.length) {
+        const r = await getMessaging().sendEachForMulticast({
+            tokens: mentionedTokens,
+            notification: { title: `${senderName} mentioned you!`, body },
+            data: { messageId },
+            webpush: webpushConfig,
+        });
+        allResponses.push({ response: r, tokens: mentionedTokens });
+        console.log(`Mention notifications — Success: ${r.successCount}, Failure: ${r.failureCount}`);
+    }
+    if (otherTokens.length) {
+        const r = await getMessaging().sendEachForMulticast({
+            tokens: otherTokens,
+            notification: { title: `${senderName} sent a message`, body },
+            data: { messageId },
+            webpush: webpushConfig,
+        });
+        allResponses.push({ response: r, tokens: otherTokens });
+        console.log(`General notifications — Success: ${r.successCount}, Failure: ${r.failureCount}`);
+    }
 
     // Remove stale or invalid tokens
     const batch = db.batch();
     let hasDeletions = false;
-    response.responses.forEach((resp, i) => {
-        if (!resp.success) {
-            const token = tokens[i];
-            const code = resp.error?.code;
-            console.log(`Token failure [${i}] code: ${code}, message: ${resp.error?.message}`);
-            if (
-                code === 'messaging/invalid-registration-token' ||
-                code === 'messaging/registration-token-not-registered' ||
-                code === 'messaging/third-party-auth-error'
-            ) {
-                const linkedDocIds = recipientsByToken.get(token) || [];
-                linkedDocIds.forEach((docId) => {
-                    batch.delete(db.collection('fcmTokens').doc(docId));
-                    hasDeletions = true;
-                });
+    for (const { response, tokens: batchTokens } of allResponses) {
+        response.responses.forEach((resp, i) => {
+            if (!resp.success) {
+                const token = batchTokens[i];
+                const code = resp.error?.code;
+                console.log(`Token failure code: ${code}, message: ${resp.error?.message}`);
+                if (
+                    code === 'messaging/invalid-registration-token' ||
+                    code === 'messaging/registration-token-not-registered' ||
+                    code === 'messaging/third-party-auth-error'
+                ) {
+                    const linkedDocIds = recipientsByToken.get(token) || [];
+                    linkedDocIds.forEach((docId) => {
+                        batch.delete(db.collection('fcmTokens').doc(docId));
+                        hasDeletions = true;
+                    });
+                }
             }
-        }
-    });
+        });
+    }
     if (hasDeletions) await batch.commit();
-    console.log(`sendEachForMulticast done. Success: ${response.successCount}, Failure: ${response.failureCount}`);
 });
 
 // ── sendTestNotification ───────────────────────────────────────────────────
