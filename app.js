@@ -712,8 +712,17 @@
         currentProfile.displayName = String(data.displayName || '').slice(0, 30);
       } else {
         const user = auth.currentUser;
+        const rawName = user?.displayName || user?.email?.split('@')[0] || 'User';
+        const fallbackName = String(rawName).slice(0, 30);
         currentProfile.avatar = '😀';
-        currentProfile.displayName = user?.displayName || user?.email || '';
+        currentProfile.displayName = fallbackName;
+        // Auto-create a profile so this user is visible to others in the users list
+        if (fallbackName.length > 0) {
+          db.collection('userProfiles').doc(uid).set({
+            avatar: '😀',
+            displayName: fallbackName,
+          }).catch(() => { });
+        }
       }
       syncProfileUI();
     } catch (err) {
