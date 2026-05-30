@@ -41,7 +41,7 @@
   const input = document.getElementById('message-input');
   const mediaPickerBtn = document.getElementById('media-picker-btn');
   const mediaPickerModal = document.getElementById('media-picker-modal');
-  const newlineBtn = document.getElementById('newline-btn');
+
   const emojiPanel = document.getElementById('emoji-panel');
   const gifPanel = document.getElementById('gif-panel');
   const stickerPanel = document.getElementById('sticker-panel');
@@ -101,8 +101,12 @@
   const dmTypingEl = document.getElementById('dm-typing-indicator');
   const photoBtnEl = document.getElementById('photo-btn');
   const photoInputEl = document.getElementById('photo-input');
+  const cameraInputEl = document.getElementById('camera-input');
+  const photoSourceMenuEl = document.getElementById('photo-source-menu');
   const dmPhotoBtnEl = document.getElementById('dm-photo-btn');
   const dmPhotoInputEl = document.getElementById('dm-photo-input');
+  const dmCameraInputEl = document.getElementById('dm-camera-input');
+  const dmPhotoSourceMenuEl = document.getElementById('dm-photo-source-menu');
   const chatsBtnEl = document.getElementById('chats-btn');
   const chatsBadgeEl = document.getElementById('chats-badge');
   const chatsPanelEl = document.getElementById('chats-panel');
@@ -732,16 +736,6 @@
       e.preventDefault();
       form.requestSubmit();
     }
-  });
-
-  newlineBtn.addEventListener('click', () => {
-    const start = input.selectionStart ?? input.value.length;
-    const end = input.selectionEnd ?? input.value.length;
-    input.value = input.value.slice(0, start) + '\n' + input.value.slice(end);
-    input.setSelectionRange(start + 1, start + 1);
-    input.style.height = 'auto';
-    input.style.height = input.scrollHeight + 'px';
-    input.focus();
   });
 
   // ── Profile management ──────────────────────────────────
@@ -2299,15 +2293,58 @@
   document.getElementById('dm-photo-preview-cancel').addEventListener('click', () => clearPhotoPreview(true));
   document.getElementById('dm-photo-preview-send').addEventListener('click', () => sendPendingPhotos(true));
 
-  photoBtnEl.addEventListener('click', () => photoInputEl.click());
+  function togglePhotoSourceMenu(menuEl, btnEl) {
+    const isHidden = menuEl.classList.contains('hidden');
+    // Close both menus first
+    photoSourceMenuEl.classList.add('hidden');
+    dmPhotoSourceMenuEl.classList.add('hidden');
+    if (isHidden) {
+      menuEl.classList.remove('hidden');
+      // Close on outside click
+      const onOutside = (e) => {
+        if (!btnEl.contains(e.target) && !menuEl.contains(e.target)) {
+          menuEl.classList.add('hidden');
+          document.removeEventListener('click', onOutside, true);
+        }
+      };
+      document.addEventListener('click', onOutside, true);
+    }
+  }
+
+  photoBtnEl.addEventListener('click', () => togglePhotoSourceMenu(photoSourceMenuEl, photoBtnEl));
+  document.getElementById('photo-source-camera').addEventListener('click', () => {
+    photoSourceMenuEl.classList.add('hidden');
+    cameraInputEl.click();
+  });
+  document.getElementById('photo-source-library').addEventListener('click', () => {
+    photoSourceMenuEl.classList.add('hidden');
+    photoInputEl.click();
+  });
   photoInputEl.addEventListener('change', (e) => {
     if (e.target.files.length) showPhotoPreview(e.target.files, false);
     photoInputEl.value = '';
   });
-  dmPhotoBtnEl.addEventListener('click', () => dmPhotoInputEl.click());
+  cameraInputEl.addEventListener('change', (e) => {
+    if (e.target.files.length) showPhotoPreview(e.target.files, false);
+    cameraInputEl.value = '';
+  });
+
+  dmPhotoBtnEl.addEventListener('click', () => togglePhotoSourceMenu(dmPhotoSourceMenuEl, dmPhotoBtnEl));
+  document.getElementById('dm-photo-source-camera').addEventListener('click', () => {
+    dmPhotoSourceMenuEl.classList.add('hidden');
+    dmCameraInputEl.click();
+  });
+  document.getElementById('dm-photo-source-library').addEventListener('click', () => {
+    dmPhotoSourceMenuEl.classList.add('hidden');
+    dmPhotoInputEl.click();
+  });
   dmPhotoInputEl.addEventListener('change', (e) => {
     if (e.target.files.length) showPhotoPreview(e.target.files, true);
     dmPhotoInputEl.value = '';
+  });
+  dmCameraInputEl.addEventListener('change', (e) => {
+    if (e.target.files.length) showPhotoPreview(e.target.files, true);
+    dmCameraInputEl.value = '';
   });
 
   // ── Auth state ────────────────────────────────────────
