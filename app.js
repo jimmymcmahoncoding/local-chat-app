@@ -105,6 +105,7 @@
   const dmPhotoBtnEl = document.getElementById('dm-photo-btn');
   const dmPhotoInputEl = document.getElementById('dm-photo-input');
   const chatsBtnEl = document.getElementById('chats-btn');
+  const chatsBadgeEl = document.getElementById('chats-badge');
   const chatsPanelEl = document.getElementById('chats-panel');
   const chatsPanelListEl = document.getElementById('chats-panel-list');
   const newDmBtnEl = document.getElementById('new-dm-btn');
@@ -146,6 +147,8 @@
   let unsubscribeDMMessages = null;
   const dmConversationsCache = new Map();
   let unsubscribeDMConversations = null;
+  const dmUnreadCounts = new Map();
+  let dmConversationsLoaded = false;
 
   let mediaRecorder = null;
   let audioChunks = [];
@@ -1286,18 +1289,37 @@
     });
   }
 
+  function updateChatsBadge() {
+    let total = 0;
+    dmUnreadCounts.forEach((count) => { total += count; });
+    if (chatsBadgeEl) {
+      chatsBadgeEl.textContent = total > 99 ? '99+' : String(total);
+      chatsBadgeEl.classList.toggle('hidden', total === 0);
+    }
+  }
+
   function subscribeDMConversations(uid) {
     if (unsubscribeDMConversations) { unsubscribeDMConversations(); unsubscribeDMConversations = null; }
+    dmConversationsLoaded = false;
     unsubscribeDMConversations = db.collection('directMessages')
       .where('participants', 'array-contains', uid)
       .onSnapshot((snap) => {
         snap.docChanges().forEach((change) => {
           if (change.type === 'removed') {
             dmConversationsCache.delete(change.doc.id);
+            dmUnreadCounts.delete(change.doc.id);
           } else {
+            const prev = dmConversationsCache.get(change.doc.id);
             dmConversationsCache.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
+            // Count as unread if: initial load is done, the conversation was updated (new message),
+            // and it's not the currently open DM conversation
+            if (dmConversationsLoaded && change.type === 'modified' && change.doc.id !== currentDMConversationId) {
+              dmUnreadCounts.set(change.doc.id, (dmUnreadCounts.get(change.doc.id) || 0) + 1);
+              updateChatsBadge();
+            }
           }
         });
+        dmConversationsLoaded = true;
         if (!chatsPanelEl.classList.contains('hidden')) renderChatsList();
       }, (err) => {
         console.warn('DM conversations subscription error:', err);
@@ -1664,6 +1686,9 @@
     if (!user || partnerUid === user.uid || !cachedIsAllowed) return;
     currentDMPartnerUid = partnerUid;
     currentDMConversationId = getConversationId(user.uid, partnerUid);
+    // Clear unread for this conversation
+    dmUnreadCounts.set(currentDMConversationId, 0);
+    updateChatsBadge();
     usersPanelEl.classList.add('hidden');
     updateDMHeader();
     subscribeDMMessages(currentDMConversationId, user);
@@ -1734,6 +1759,7 @@
       }
       const lastMsg = conv.lastMessage ? String(conv.lastMessage).slice(0, 60) : 'No messages yet';
       const time = conv.updatedAt ? formatChatTime(conv.updatedAt.toDate?.() || new Date(conv.updatedAt)) : '';
+      const unread = dmUnreadCounts.get(conv.id) || 0;
       item.innerHTML = `
         <div class="chat-list-item__avatar-wrap">
           ${avatarHtml}
@@ -1744,7 +1770,10 @@
             <span class="chat-list-item__name">${escapeHtml(profile.displayName || 'User')}</span>
             <span class="chat-list-item__time">${escapeHtml(time)}</span>
           </div>
-          <div class="chat-list-item__preview">${escapeHtml(lastMsg)}</div>
+          <div class="chat-list-item__bottom">
+            <span class="chat-list-item__preview">${escapeHtml(lastMsg)}</span>
+            ${unread > 0 ? `<span class="chat-list-item__unread">${unread > 99 ? '99+' : unread}</span>` : ''}
+          </div>
         </div>`;
       item.addEventListener('click', () => {
         chatsPanelEl.classList.add('hidden');
@@ -2153,6 +2182,8 @@
     presenceCache.clear();
     profilesCache.clear();
     dmConversationsCache.clear();
+    dmUnreadCounts.clear();
+    dmConversationsLoaded = false;
     pendingSeenUpdates.clear();
     cachedIsAllowed = false;
     cachedIsAdmin = false;

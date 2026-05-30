@@ -2034,6 +2034,25 @@ emoji-picker {
   color: var(--primary);
 }
 
+.chats-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 /* ══════════════════════════════════════════════
    Chats panel overlay
 ══════════════════════════════════════════════ */
@@ -2238,7 +2257,32 @@ emoji-picker {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-list-item__bottom {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
   margin-top: 0.1rem;
+}
+
+.chat-list-item__unread {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  background: #22c55e;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* ══════════════════════════════════════════════
