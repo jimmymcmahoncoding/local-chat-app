@@ -175,7 +175,16 @@
         </div>
         <button id="reply-cancel-btn" type="button" class="reply-preview__close" aria-label="Cancel reply">✕</button>
       </div>
-      <input type="file" id="photo-input" accept="image/*" class="hidden" aria-hidden="true">
+      <input type="file" id="photo-input" accept="image/*" multiple class="hidden" aria-hidden="true">
+      <div id="photo-preview-strip" class="photo-preview-strip hidden">
+        <div id="photo-preview-list" class="photo-preview-list"></div>
+        <div class="photo-preview-actions">
+          <button type="button" id="photo-preview-cancel" class="photo-preview-cancel"
+            aria-label="Cancel photo selection">✕ Cancel</button>
+          <button type="button" id="photo-preview-send" class="photo-preview-send">Send <span
+              id="photo-preview-count"></span></button>
+        </div>
+      </div>
       <form id="message-form">
         <button type="button" id="media-picker-btn" class="btn-composer-icon" aria-label="Add emoji, GIF or sticker"
           title="Add emoji, GIF or sticker">😊</button>
@@ -277,7 +286,16 @@
       <div id="dm-messages" class="dm-messages" aria-live="polite"></div>
       <div id="dm-typing-indicator" class="dm-typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
       <div class="dm-composer">
-        <input type="file" id="dm-photo-input" accept="image/*" class="hidden" aria-hidden="true">
+        <input type="file" id="dm-photo-input" accept="image/*" multiple class="hidden" aria-hidden="true">
+        <div id="dm-photo-preview-strip" class="photo-preview-strip hidden">
+          <div id="dm-photo-preview-list" class="photo-preview-list"></div>
+          <div class="photo-preview-actions">
+            <button type="button" id="dm-photo-preview-cancel" class="photo-preview-cancel"
+              aria-label="Cancel photo selection">✕ Cancel</button>
+            <button type="button" id="dm-photo-preview-send" class="photo-preview-send">Send <span
+                id="dm-photo-preview-count"></span></button>
+          </div>
+        </div>
         <form id="dm-form">
           <button type="button" id="dm-photo-btn" class="btn-composer-icon" aria-label="Send a photo"
             title="Send a photo">

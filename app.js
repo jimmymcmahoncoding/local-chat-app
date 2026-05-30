@@ -115,6 +115,8 @@
   let currentProfile = { avatar: '😀', displayName: '' };
   let profileSelectedAvatar = '😀';
   let replyTo = null;
+  let pendingPhotos = [];
+  let dmPendingPhotos = [];
   let cachedIsAllowed = false;
   let cachedIsAdmin = false;
   let isSignUpMode = false;
@@ -2138,16 +2140,80 @@
   voiceSendBtn.addEventListener('click', stopAndSendRecording);
   updateVoiceBtnVisibility();
 
+  // ── Photo multi-select preview ───────────────────────────
+  function showPhotoPreview(files, isDM) {
+    const pending = isDM ? dmPendingPhotos : pendingPhotos;
+    Array.from(files).forEach(f => pending.push({ file: f, url: URL.createObjectURL(f) }));
+    renderPhotoPreview(isDM);
+  }
+
+  function renderPhotoPreview(isDM) {
+    const pending = isDM ? dmPendingPhotos : pendingPhotos;
+    const list = document.getElementById(isDM ? 'dm-photo-preview-list' : 'photo-preview-list');
+    const strip = document.getElementById(isDM ? 'dm-photo-preview-strip' : 'photo-preview-strip');
+    const countEl = document.getElementById(isDM ? 'dm-photo-preview-count' : 'photo-preview-count');
+    if (pending.length === 0) { clearPhotoPreview(isDM); return; }
+    list.innerHTML = '';
+    pending.forEach(({ url }, index) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'photo-preview-thumb';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = `Photo ${index + 1}`;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'photo-preview-thumb__remove';
+      removeBtn.setAttribute('aria-label', 'Remove photo');
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', () => {
+        URL.revokeObjectURL(pending[index].url);
+        pending.splice(index, 1);
+        renderPhotoPreview(isDM);
+      });
+      thumb.appendChild(img);
+      thumb.appendChild(removeBtn);
+      list.appendChild(thumb);
+    });
+    countEl.textContent = pending.length === 1 ? '1 photo' : `${pending.length} photos`;
+    strip.classList.remove('hidden');
+  }
+
+  function clearPhotoPreview(isDM) {
+    const pending = isDM ? dmPendingPhotos : pendingPhotos;
+    const list = document.getElementById(isDM ? 'dm-photo-preview-list' : 'photo-preview-list');
+    const strip = document.getElementById(isDM ? 'dm-photo-preview-strip' : 'photo-preview-strip');
+    pending.forEach(({ url }) => URL.revokeObjectURL(url));
+    pending.length = 0;
+    list.innerHTML = '';
+    strip.classList.add('hidden');
+  }
+
+  async function sendPendingPhotos(isDM) {
+    const pending = isDM ? dmPendingPhotos : pendingPhotos;
+    const sendBtn = document.getElementById(isDM ? 'dm-photo-preview-send' : 'photo-preview-send');
+    if (pending.length === 0) return;
+    sendBtn.disabled = true;
+    const files = pending.map(p => p.file);
+    clearPhotoPreview(isDM);
+    for (const file of files) {
+      await sendPhotoMessage(file, isDM);
+    }
+    sendBtn.disabled = false;
+  }
+
+  document.getElementById('photo-preview-cancel').addEventListener('click', () => clearPhotoPreview(false));
+  document.getElementById('photo-preview-send').addEventListener('click', () => sendPendingPhotos(false));
+  document.getElementById('dm-photo-preview-cancel').addEventListener('click', () => clearPhotoPreview(true));
+  document.getElementById('dm-photo-preview-send').addEventListener('click', () => sendPendingPhotos(true));
+
   photoBtnEl.addEventListener('click', () => photoInputEl.click());
-  photoInputEl.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (file) await sendPhotoMessage(file, false);
+  photoInputEl.addEventListener('change', (e) => {
+    if (e.target.files.length) showPhotoPreview(e.target.files, false);
     photoInputEl.value = '';
   });
   dmPhotoBtnEl.addEventListener('click', () => dmPhotoInputEl.click());
-  dmPhotoInputEl.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (file) await sendPhotoMessage(file, true);
+  dmPhotoInputEl.addEventListener('change', (e) => {
+    if (e.target.files.length) showPhotoPreview(e.target.files, true);
     dmPhotoInputEl.value = '';
   });
 
