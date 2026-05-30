@@ -839,6 +839,7 @@
       closeProfileModal();
     } catch (err) {
       console.error('Failed to save profile:', err);
+      alert('Failed to save profile. Please try again.');
     } finally {
       if (saveBtn) saveBtn.disabled = false;
     }

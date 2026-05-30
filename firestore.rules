@@ -41,12 +41,13 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isAllowed();
       allow create: if isAllowed()
-        && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'mentions'])
+          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'mentions'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
         && request.resource.data.createdAt == request.time
         && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
+        && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024))
         && (!('replyTo' in request.resource.data) || (
           request.resource.data.replyTo is map
           && request.resource.data.replyTo.keys().hasOnly(['text', 'displayName', 'messageId'])
@@ -122,12 +123,13 @@ service cloud.firestore {
       allow read: if isAllowed();
       allow write: if isAllowed()
         && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['avatar', 'displayName'])
+        && request.resource.data.keys().hasOnly(['avatar', 'displayName', 'avatarUrl'])
         && request.resource.data.avatar is string
         && request.resource.data.avatar.size() <= 10
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 30;
+        && request.resource.data.displayName.size() <= 30
+        && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024));
     }
 
     match /fcmTokens/{userId} {
@@ -198,13 +200,14 @@ service cloud.firestore {
           && request.auth.uid in convParticipants()
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.createdAt == request.time
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl'])
+          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'avatarUrl', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl'])
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 50
           && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
+          && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024))
           && (!('photoUrl' in request.resource.data) || (request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 1024));
         allow delete: if isAllowed()
           && resource.data.uid == request.auth.uid;
