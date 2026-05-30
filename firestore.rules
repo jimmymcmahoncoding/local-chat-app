@@ -159,7 +159,7 @@ service cloud.firestore {
 
     match /directMessages/{conversationId} {
       allow read: if isAllowed()
-        && request.auth.uid in resource.data.participants;
+        && (resource == null || request.auth.uid in resource.data.participants);
       allow create: if isAllowed()
         && request.resource.data.keys().hasOnly(['participants', 'updatedAt', 'lastMessage'])
         && request.resource.data.participants is list
@@ -178,7 +178,10 @@ service cloud.firestore {
           return get(/databases/$(database)/documents/directMessages/$(conversationId)).data.participants;
         }
         allow read: if isAllowed()
-          && request.auth.uid in convParticipants();
+          && (
+            !exists(/databases/$(database)/documents/directMessages/$(conversationId))
+            || request.auth.uid in convParticipants()
+          );
         allow create: if isAllowed()
           && request.auth.uid in convParticipants()
           && request.resource.data.uid == request.auth.uid
