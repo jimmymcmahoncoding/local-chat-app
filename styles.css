@@ -608,6 +608,17 @@ emoji-picker {
   border-radius: 12px;
 }
 
+.msg__photo {
+  display: block;
+  max-width: 280px;
+  max-height: 360px;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  cursor: zoom-in;
+  object-fit: cover;
+}
+
 /* ── Profile button (header) ────────────────────────────── */
 .btn-profile {
   display: flex;
@@ -2133,6 +2144,10 @@ emoji-picker {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
+}
+
+.dm-photo-btn {
+  flex-shrink: 0;
 }
 
 #dm-input {

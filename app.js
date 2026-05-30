@@ -100,6 +100,10 @@
   const dmUserNameEl = document.getElementById('dm-user-name');
   const dmUserStatusEl = document.getElementById('dm-user-status');
   const dmTypingEl = document.getElementById('dm-typing-indicator');
+  const photoBtnEl = document.getElementById('photo-btn');
+  const photoInputEl = document.getElementById('photo-input');
+  const dmPhotoBtnEl = document.getElementById('dm-photo-btn');
+  const dmPhotoInputEl = document.getElementById('dm-photo-input');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -345,6 +349,11 @@
         mediaContent = safeAudioUrl
           ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeAudioUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
           : `<div class="msg__text">[Voice message]</div>`;
+      } else if (data.type === 'photo') {
+        const safePhotoUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
+        mediaContent = safePhotoUrl
+          ? `<a href="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="lazy"></a>`
+          : '<div class="msg__text">[Photo]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
@@ -599,7 +608,9 @@
         const sender = message.displayName || 'Family';
         const body = message.type === 'voice'
           ? '🎤 Voice message'
-          : String(message.text || '').trim() || 'New message received';
+          : message.type === 'photo'
+            ? '📷 Photo'
+            : String(message.text || '').trim() || 'New message received';
         const isMentioned = Array.isArray(message.mentions) && message.mentions.includes(signedInUser.uid);
         const title = isMentioned ? `${sender} mentioned you!` : `${sender} sent a message`;
         showNotification(title, body);
@@ -842,6 +853,7 @@
     if (data.type === 'gif') replyText = '[GIF]';
     else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
     else if (data.type === 'voice') replyText = '[Voice message 🎤]';
+    else if (data.type === 'photo') replyText = '[Photo 📷]';
     else replyText = String(data.text || '').slice(0, 200);
     replyTo = {
       text: replyText,
@@ -1530,6 +1542,11 @@
         mediaContent = safeUrl
           ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeUrl)}" controls preload="none"></audio></div>`
           : '<div class="msg__text">[Voice message]</div>';
+      } else if (data.type === 'photo') {
+        const safeUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
+        mediaContent = safeUrl
+          ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safeUrl)}" alt="Photo" loading="lazy"></a>`
+          : '<div class="msg__text">[Photo]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
@@ -1895,10 +1912,78 @@
     }
   }
 
+  async function sendPhotoMessage(file, isDM = false) {
+    const user = auth.currentUser;
+    if (!user || !cachedIsAllowed) return;
+    if (!file.type.startsWith('image/')) {
+      messageStatus.textContent = 'Please select an image file.';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      messageStatus.textContent = 'Photo must be under 10 MB.';
+      return;
+    }
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const fileName = `${Date.now()}.${ext || 'jpg'}`;
+    const storageRef = storage.ref(`photos/${user.uid}/${fileName}`);
+    if (!isDM) messageStatus.textContent = 'Uploading photo\u2026';
+    try {
+      const snapshot = await storageRef.put(file, { contentType: file.type });
+      const photoUrl = await snapshot.ref.getDownloadURL();
+      const photoData = {
+        type: 'photo',
+        photoUrl,
+        text: '[Photo]',
+        uid: user.uid,
+        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+        avatar: currentProfile.avatar,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+      if (isDM) {
+        if (!currentDMConversationId || !currentDMPartnerUid) return;
+        const convRef = db.collection('directMessages').doc(currentDMConversationId);
+        const convSnap = await convRef.get();
+        if (!convSnap.exists) {
+          await convRef.set({
+            participants: [user.uid, currentDMPartnerUid].sort(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastMessage: '',
+          });
+        }
+        await convRef.collection('messages').add(photoData);
+        await convRef.update({
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastMessage: '[Photo]',
+        });
+      } else {
+        if (replyTo) photoData.replyTo = replyTo;
+        await db.collection('messages').add(photoData);
+        clearReply();
+        messageStatus.textContent = '';
+      }
+    } catch (err) {
+      if (!isDM) messageStatus.textContent = `Photo failed: ${err.message}`;
+      else console.error('DM photo upload failed:', err);
+    }
+  }
+
   voiceBtn.addEventListener('click', startRecording);
   voiceCancelBtn.addEventListener('click', cancelRecording);
   voiceSendBtn.addEventListener('click', stopAndSendRecording);
   updateVoiceBtnVisibility();
+
+  photoBtnEl.addEventListener('click', () => photoInputEl.click());
+  photoInputEl.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file) await sendPhotoMessage(file, false);
+    photoInputEl.value = '';
+  });
+  dmPhotoBtnEl.addEventListener('click', () => dmPhotoInputEl.click());
+  dmPhotoInputEl.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file) await sendPhotoMessage(file, true);
+    dmPhotoInputEl.value = '';
+  });
 
   // ── Auth state ────────────────────────────────────────
   auth.onAuthStateChanged(async (user) => {
