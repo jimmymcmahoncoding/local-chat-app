@@ -138,33 +138,6 @@
     <div id="messages" aria-live="polite"></div>
     <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Unified media picker modal -->
-    <div id="media-picker-modal" class="media-picker-modal hidden">
-      <div class="media-picker-modal__tabs" role="tablist">
-        <button type="button" class="media-picker-tab media-picker-tab--active" role="tab" data-tab="emoji"
-          aria-selected="true">😊 Emoji</button>
-        <button type="button" class="media-picker-tab" role="tab" data-tab="gif" aria-selected="false">GIF</button>
-        <button type="button" class="media-picker-tab" role="tab" data-tab="sticker" aria-selected="false">🎭
-          Stickers</button>
-      </div>
-      <div id="emoji-panel" class="picker-panel" role="tabpanel">
-        <emoji-picker></emoji-picker>
-      </div>
-      <div id="gif-panel" class="picker-panel hidden" role="tabpanel">
-        <div class="gif-panel__header">
-          <input id="gif-search-input" type="search" placeholder="Search GIFs…" autocomplete="off" />
-        </div>
-        <div id="gif-results" class="gif-results"></div>
-        <div id="gif-load-more" class="gif-load-more hidden">
-          <button type="button">Load more</button>
-        </div>
-      </div>
-      <div id="sticker-panel" class="picker-panel hidden" role="tabpanel">
-        <div id="sticker-tabs" class="sticker-tabs"></div>
-        <div id="sticker-grid" class="sticker-grid"></div>
-      </div>
-    </div>
-
     <div class="composer">
       <div id="mention-dropdown" class="mention-dropdown hidden" role="listbox" aria-label="Mention a user"></div>
       <div id="reply-preview" class="reply-preview hidden">
@@ -404,6 +377,33 @@
           <button type="button" id="dm-voice-send-btn" class="voice-send-btn"
             aria-label="Send voice message">Send</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Unified media picker modal – lives after dm-panel so it stacks above it -->
+    <div id="media-picker-modal" class="media-picker-modal hidden">
+      <div class="media-picker-modal__tabs" role="tablist">
+        <button type="button" class="media-picker-tab media-picker-tab--active" role="tab" data-tab="emoji"
+          aria-selected="true">😊 Emoji</button>
+        <button type="button" class="media-picker-tab" role="tab" data-tab="gif" aria-selected="false">GIF</button>
+        <button type="button" class="media-picker-tab" role="tab" data-tab="sticker" aria-selected="false">🎭
+          Stickers</button>
+      </div>
+      <div id="emoji-panel" class="picker-panel" role="tabpanel">
+        <emoji-picker></emoji-picker>
+      </div>
+      <div id="gif-panel" class="picker-panel hidden" role="tabpanel">
+        <div class="gif-panel__header">
+          <input id="gif-search-input" type="search" placeholder="Search GIFs…" autocomplete="off" />
+        </div>
+        <div id="gif-results" class="gif-results"></div>
+        <div id="gif-load-more" class="gif-load-more hidden">
+          <button type="button">Load more</button>
+        </div>
+      </div>
+      <div id="sticker-panel" class="picker-panel hidden" role="tabpanel">
+        <div id="sticker-tabs" class="sticker-tabs"></div>
+        <div id="sticker-grid" class="sticker-grid"></div>
       </div>
     </div>
 

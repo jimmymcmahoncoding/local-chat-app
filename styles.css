@@ -527,9 +527,14 @@ body {
 /* ── Picker panels ───────────────────────────────────────── */
 /* ── Unified media picker modal ──────────────────────────── */
 .media-picker-modal {
-  flex-shrink: 0;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 250;
   border-top: 1px solid var(--border);
   background: var(--composer-bg);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
 }
 
 .media-picker-modal__tabs {
