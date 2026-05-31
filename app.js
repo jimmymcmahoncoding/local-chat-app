@@ -1027,6 +1027,7 @@
     mediaPickerModal.classList.add('hidden');
     mediaPickerModal.style.bottom = '';
     pickerBackdrop.classList.add('hidden');
+    pickerBackdrop.style.bottom = '';
     chatSection.classList.remove('picker-open');
   }
 
@@ -1242,12 +1243,14 @@
       const composerH = composerEl.getBoundingClientRect().height;
       mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
+      // Backdrop only covers messages area (not composer) so input tap still works
+      pickerBackdrop.style.bottom = composerH + 'px';
       pickerBackdrop.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      // Force synchronous layout so padding-bottom:45vh is applied, then scroll to bottom
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // setTimeout(0) fires after the rendering update where padding-bottom:45vh is applied
+      setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 0);
     }
   });
 
@@ -1259,11 +1262,12 @@
       const composerH = dmComposerEl.getBoundingClientRect().height;
       mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
+      pickerBackdrop.style.bottom = composerH + 'px';
       pickerBackdrop.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
+      setTimeout(() => { dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight; }, 0);
     }
   });
 
