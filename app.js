@@ -39,6 +39,7 @@
   const messageStatus = document.getElementById('message-status');
   const dmMessageStatus = document.getElementById('dm-message-status');
   const form = document.getElementById('message-form');
+  const composerEl = form.closest('.composer');
   const input = document.getElementById('message-input');
   const mediaPickerBtn = document.getElementById('media-picker-btn');
   const mediaPickerModal = document.getElementById('media-picker-modal');
@@ -94,6 +95,7 @@
   const dmPanelEl = document.getElementById('dm-panel');
   const dmMessagesEl = document.getElementById('dm-messages');
   const dmFormEl = document.getElementById('dm-form');
+  const dmComposerEl = dmFormEl.closest('.dm-composer');
   const dmInputEl = document.getElementById('dm-input');
   const dmBackBtn = document.getElementById('dm-back-btn');
   const dmUserAvatarEl = document.getElementById('dm-user-avatar');
@@ -1022,6 +1024,7 @@
 
   function closeAllPickers() {
     mediaPickerModal.classList.add('hidden');
+    mediaPickerModal.style.bottom = '';
     chatSection.classList.remove('picker-open');
   }
 
@@ -1234,10 +1237,14 @@
     const wasHidden = mediaPickerModal.classList.contains('hidden');
     closeAllPickers();
     if (wasHidden) {
+      const composerH = composerEl.getBoundingClientRect().height;
+      mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
+      // Scroll last message into view above the picker (WhatsApp-style)
+      requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
     }
   });
 
@@ -1246,10 +1253,13 @@
     const wasHidden = mediaPickerModal.classList.contains('hidden');
     closeAllPickers();
     if (wasHidden) {
+      const composerH = dmComposerEl.getBoundingClientRect().height;
+      mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
+      requestAnimationFrame(() => { dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight; });
     }
   });
 
@@ -1259,6 +1269,10 @@
 
   messagesEl.addEventListener('click', closeAllPickers);
   dmMessagesEl.addEventListener('click', closeAllPickers);
+
+  // Close picker when user taps the text input (WhatsApp-style)
+  input.addEventListener('focus', closeAllPickers);
+  dmInputEl.addEventListener('focus', closeAllPickers);
 
   gifSearchInput.addEventListener('input', () => {
     clearTimeout(gifSearchTimeout);
