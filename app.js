@@ -630,7 +630,20 @@
     });
 
     if (currentUser) observeMessagesForSeen(currentUser.uid);
-    if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (atBottom) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Images load asynchronously and expand scrollHeight after the initial scroll.
+      // Re-scroll to bottom each time an image loads, as long as the user is still
+      // near the bottom (i.e. they haven't manually scrolled away).
+      messagesEl.querySelectorAll('img').forEach((img) => {
+        if (!img.complete || img.naturalHeight === 0) {
+          img.addEventListener('load', () => {
+            const distFromBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+            if (distFromBottom < 400) messagesEl.scrollTop = messagesEl.scrollHeight;
+          }, { once: true });
+        }
+      });
+    }
   }
 
   async function deleteMessage(docId) {
