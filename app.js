@@ -1246,10 +1246,8 @@
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      // Double rAF: wait for padding-bottom CSS to be applied before scrolling
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }));
+      // Force synchronous layout so padding-bottom:45vh is applied, then scroll to bottom
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   });
 
@@ -1265,9 +1263,7 @@
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
-      }));
+      dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
     }
   });
 
