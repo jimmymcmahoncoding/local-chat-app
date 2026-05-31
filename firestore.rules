@@ -41,7 +41,7 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isAllowed();
       allow create: if isAllowed()
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'mentions'])
+          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'mentions'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
@@ -97,6 +97,14 @@ service cloud.firestore {
             && request.resource.data.photoUrl.size() > 0
             && request.resource.data.photoUrl.size() <= 1024
             && request.resource.data.text == '[Photo]'
+          )
+          ||
+          (
+            request.resource.data.type == 'photos'
+            && request.resource.data.photoUrls is list
+            && request.resource.data.photoUrls.size() > 0
+            && request.resource.data.photoUrls.size() <= 10
+            && request.resource.data.text == '[Photos]'
           )
         )
         && (!('mentions' in request.resource.data) || (
@@ -200,7 +208,7 @@ service cloud.firestore {
           && request.auth.uid in convParticipants()
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.createdAt == request.time
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'avatarUrl', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl'])
+          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'avatarUrl', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'replyTo'])
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500

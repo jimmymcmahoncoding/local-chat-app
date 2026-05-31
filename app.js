@@ -37,6 +37,7 @@
   const gifLoadMore = document.getElementById('gif-load-more');
   const messagesEl = document.getElementById('messages');
   const messageStatus = document.getElementById('message-status');
+  const dmMessageStatus = document.getElementById('dm-message-status');
   const form = document.getElementById('message-form');
   const input = document.getElementById('message-input');
   const mediaPickerBtn = document.getElementById('media-picker-btn');
@@ -2468,9 +2469,10 @@
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
     const fileName = `${Date.now()}.${ext || 'jpg'}`;
     const storageRef = storage.ref(`photos/${user.uid}/${fileName}`);
-    if (!isDM) messageStatus.textContent = 'Uploading photo\u2026';
+    const statusEl = isDM ? dmMessageStatus : messageStatus;
+    statusEl.textContent = 'Uploading photo…';
     try {
-      const snapshot = await storageRef.put(file, { contentType: file.type });
+      const snapshot = await storageRef.put(file, { contentType: file.type || 'image/jpeg' });
       const photoUrl = await snapshot.ref.getDownloadURL();
       const photoData = {
         type: 'photo',
@@ -2498,6 +2500,7 @@
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           lastMessage: '[Photo]',
         });
+        dmMessageStatus.textContent = '';
       } else {
         if (replyTo) photoData.replyTo = replyTo;
         await db.collection('messages').add(photoData);
@@ -2505,8 +2508,7 @@
         messageStatus.textContent = '';
       }
     } catch (err) {
-      if (!isDM) messageStatus.textContent = `Photo failed: ${err.message}`;
-      else console.error('DM photo upload failed:', err);
+      statusEl.textContent = `Photo upload failed: ${err.message}`;
     }
   }
 
@@ -2582,13 +2584,19 @@
     if (!user || !cachedIsAllowed) return;
     const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
     if (!valid.length) return;
-    if (!isDM) messageStatus.textContent = 'Uploading…';
+    const statusEl = isDM ? dmMessageStatus : messageStatus;
+    statusEl.textContent = `Uploading ${valid.length === 1 ? 'photo' : `${valid.length} photos`}…`;
     try {
+      let uploaded = 0;
       const uploads = valid.map((file) => {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'jpg'}`;
         const ref = storage.ref(`photos/${user.uid}/${fileName}`);
-        return ref.put(file, { contentType: file.type }).then(snap => snap.ref.getDownloadURL());
+        return ref.put(file, { contentType: file.type || 'image/jpeg' }).then(snap => {
+          uploaded++;
+          if (valid.length > 1) statusEl.textContent = `Uploading… ${uploaded}/${valid.length}`;
+          return snap.ref.getDownloadURL();
+        });
       });
       const photoUrls = await Promise.all(uploads);
       const isSingle = photoUrls.length === 1;
@@ -2599,6 +2607,7 @@
         if (dmReplyTo) fields.replyTo = dmReplyTo;
         await sendDMMedia(fields);
         clearDMReply();
+        dmMessageStatus.textContent = '';
       } else {
         const msgData = {
           ...fields,
@@ -2614,8 +2623,8 @@
         messageStatus.textContent = '';
       }
     } catch (err) {
-      if (!isDM) messageStatus.textContent = `Photo upload failed: ${err.message}`;
-      else console.error('DM photo upload failed:', err);
+      const statusEl = isDM ? dmMessageStatus : messageStatus;
+      statusEl.textContent = `Photo upload failed: ${err.message}`;
     }
   }
 
