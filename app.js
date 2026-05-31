@@ -1249,8 +1249,10 @@
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      // setTimeout(0) fires after the rendering update where padding-bottom:45vh is applied
-      setTimeout(() => { messagesEl.scrollTop = messagesEl.scrollHeight; }, 0);
+      // getComputedStyle forces pending style recalculation (padding-bottom:45vh)
+      // so that scrollHeight then returns the correct padded value
+      void window.getComputedStyle(messagesEl).paddingBottom;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   });
 
@@ -1267,7 +1269,8 @@
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      setTimeout(() => { dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight; }, 0);
+      void window.getComputedStyle(dmMessagesEl).paddingBottom;
+      dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
     }
   });
 
