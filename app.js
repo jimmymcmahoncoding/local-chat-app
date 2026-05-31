@@ -1288,7 +1288,6 @@
     clearTimeout(gifSearchTimeout);
     gifSearchTimeout = setTimeout(() => {
       fetchGifs(gifSearchInput.value.trim(), 0);
-      gifSearchInput.blur();
     }, 400);
   });
 
