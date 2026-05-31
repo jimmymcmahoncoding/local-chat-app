@@ -43,6 +43,7 @@
   const input = document.getElementById('message-input');
   const mediaPickerBtn = document.getElementById('media-picker-btn');
   const mediaPickerModal = document.getElementById('media-picker-modal');
+  const pickerBackdrop = document.getElementById('picker-backdrop');
 
   const emojiPanel = document.getElementById('emoji-panel');
   const gifPanel = document.getElementById('gif-panel');
@@ -1025,6 +1026,7 @@
   function closeAllPickers() {
     mediaPickerModal.classList.add('hidden');
     mediaPickerModal.style.bottom = '';
+    pickerBackdrop.classList.add('hidden');
     chatSection.classList.remove('picker-open');
   }
 
@@ -1240,11 +1242,14 @@
       const composerH = composerEl.getBoundingClientRect().height;
       mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
+      pickerBackdrop.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      // Scroll last message into view above the picker (WhatsApp-style)
-      requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+      // Double rAF: wait for padding-bottom CSS to be applied before scrolling
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }));
     }
   });
 
@@ -1256,10 +1261,13 @@
       const composerH = dmComposerEl.getBoundingClientRect().height;
       mediaPickerModal.style.bottom = composerH + 'px';
       mediaPickerModal.classList.remove('hidden');
+      pickerBackdrop.classList.remove('hidden');
       chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
-      requestAnimationFrame(() => { dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight; });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
+      }));
     }
   });
 
@@ -1267,8 +1275,7 @@
     tab.addEventListener('click', () => showPickerTab(tab.dataset.tab));
   });
 
-  messagesEl.addEventListener('click', closeAllPickers);
-  dmMessagesEl.addEventListener('click', closeAllPickers);
+  pickerBackdrop.addEventListener('click', closeAllPickers);
 
   // Close picker when user taps the text input (WhatsApp-style)
   input.addEventListener('focus', closeAllPickers);

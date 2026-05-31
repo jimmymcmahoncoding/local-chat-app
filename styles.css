@@ -526,6 +526,17 @@ body {
 
 /* ── Picker panels ───────────────────────────────────────── */
 /* ── Unified media picker modal ──────────────────────────── */
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 249; /* just below picker (250) */
+  background: transparent;
+}
+
+.picker-backdrop.hidden {
+  display: none;
+}
+
 .media-picker-modal {
   position: fixed;
   bottom: 0;
