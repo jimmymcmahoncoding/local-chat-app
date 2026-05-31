@@ -504,7 +504,7 @@
       const gifUrl = data.type === 'gif' && isValidGiphyUrl(data.gifUrl || '') ? data.gifUrl : null;
       let mediaContent;
       if (gifUrl) {
-        mediaContent = `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`;
+        mediaContent = `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="eager">`;
       } else if (data.type === 'sticker') {
         mediaContent = `<div class="msg__sticker" aria-label="Sticker">${escapeHtml(data.sticker || '')}</div>`;
       } else if (data.type === 'voice') {
@@ -516,12 +516,12 @@
       } else if (data.type === 'photo') {
         const safePhotoUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
         mediaContent = safePhotoUrl
-          ? `<a href="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="lazy"></a>`
+          ? `<a href="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="eager"></a>`
           : '<div class="msg__text">[Photo]</div>';
       } else if (data.type === 'photos') {
         const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
         mediaContent = safeUrls.length
-          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="lazy"></a>`).join('')}</div>`
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
@@ -632,17 +632,14 @@
     if (currentUser) observeMessagesForSeen(currentUser.uid);
     if (atBottom) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      // Images load asynchronously and expand scrollHeight after the initial scroll.
-      // Re-scroll to bottom each time an image loads, as long as the user is still
-      // near the bottom (i.e. they haven't manually scrolled away).
-      messagesEl.querySelectorAll('img').forEach((img) => {
-        if (!img.complete || img.naturalHeight === 0) {
-          img.addEventListener('load', () => {
-            const distFromBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
-            if (distFromBottom < 400) messagesEl.scrollTop = messagesEl.scrollHeight;
-          }, { once: true });
-        }
-      });
+      // Images are eager but may not have painted yet; wait for all to load then re-scroll.
+      const unloaded = [...messagesEl.querySelectorAll('img')].filter(img => !img.complete);
+      if (unloaded.length > 0) {
+        Promise.all(unloaded.map(img => new Promise(res => {
+          img.addEventListener('load', res, { once: true });
+          img.addEventListener('error', res, { once: true });
+        }))).then(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+      }
     }
   }
 
@@ -1947,7 +1944,7 @@
       if (data.type === 'gif') {
         const gifUrl = isValidGiphyUrl(data.gifUrl || '') ? data.gifUrl : null;
         mediaContent = gifUrl
-          ? `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="lazy">`
+          ? `<img class="msg__gif" src="${escapeHtml(gifUrl)}" alt="GIF" loading="eager">`
           : '<div class="msg__text">[GIF]</div>';
       } else if (data.type === 'sticker') {
         mediaContent = `<div class="msg__sticker">${escapeHtml(data.sticker || '')}</div>`;
@@ -1960,12 +1957,12 @@
       } else if (data.type === 'photo') {
         const safeUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
         mediaContent = safeUrl
-          ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safeUrl)}" alt="Photo" loading="lazy"></a>`
+          ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safeUrl)}" alt="Photo" loading="eager"></a>`
           : '<div class="msg__text">[Photo]</div>';
       } else if (data.type === 'photos') {
         const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
         mediaContent = safeUrls.length
-          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="lazy"></a>`).join('')}</div>`
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
