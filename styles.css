@@ -2724,3 +2724,37 @@ emoji-picker {
   flex-shrink: 0;
   color: var(--muted);
 }
+
+/* ── Multi-photo grid ───────────────────────────────────── */
+.msg__photos {
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(2, 1fr);
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 280px;
+}
+
+.msg__photos a {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.msg__photos a:only-child {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+}
+
+.msg__photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.msg__photos a:only-child img {
+  height: auto;
+  max-height: 280px;
+  object-fit: contain;
+}

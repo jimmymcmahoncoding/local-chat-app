@@ -342,6 +342,7 @@
     else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
     else if (data.type === 'voice') replyText = '[Voice message 🎤]';
     else if (data.type === 'photo') replyText = '[Photo 📷]';
+    else if (data.type === 'photos') replyText = '[Photos 📷]';
     else replyText = String(data.text || '').slice(0, 200);
     dmReplyTo = {
       text: replyText,
@@ -513,6 +514,11 @@
         mediaContent = safePhotoUrl
           ? `<a href="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="lazy"></a>`
           : '<div class="msg__text">[Photo]</div>';
+      } else if (data.type === 'photos') {
+        const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
+        mediaContent = safeUrls.length
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="lazy"></a>`).join('')}</div>`
+          : '<div class="msg__text">[Photos]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
@@ -768,7 +774,7 @@
         const sender = message.displayName || 'Family';
         const body = message.type === 'voice'
           ? '🎤 Voice message'
-          : message.type === 'photo'
+          : (message.type === 'photo' || message.type === 'photos')
             ? '📷 Photo'
             : String(message.text || '').trim() || 'New message received';
         const isMentioned = Array.isArray(message.mentions) && message.mentions.includes(signedInUser.uid);
@@ -1049,6 +1055,13 @@
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
     closeAllPickers();
+    if (activeComposerContext === 'dm') {
+      const fields = { type: 'sticker', sticker, text: '[Sticker]' };
+      if (dmReplyTo) fields.replyTo = dmReplyTo;
+      await sendDMMedia(fields);
+      clearDMReply();
+      return;
+    }
     try {
       const stickerData = {
         type: 'sticker',
@@ -1077,6 +1090,7 @@
     else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
     else if (data.type === 'voice') replyText = '[Voice message 🎤]';
     else if (data.type === 'photo') replyText = '[Photo 📷]';
+    else if (data.type === 'photos') replyText = '[Photos 📷]';
     else replyText = String(data.text || '').slice(0, 200);
     replyTo = {
       text: replyText,
@@ -1174,6 +1188,13 @@
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed || !isValidGiphyUrl(gifUrl)) return;
     closeAllPickers();
+    if (activeComposerContext === 'dm') {
+      const fields = { type: 'gif', gifUrl, text: '[GIF]' };
+      if (dmReplyTo) fields.replyTo = dmReplyTo;
+      await sendDMMedia(fields);
+      clearDMReply();
+      return;
+    }
     try {
       const gifData = {
         type: 'gif',
@@ -1207,6 +1228,18 @@
   }
 
   mediaPickerBtn.addEventListener('click', () => {
+    activeComposerContext = 'main';
+    const wasHidden = mediaPickerModal.classList.contains('hidden');
+    closeAllPickers();
+    if (wasHidden) {
+      mediaPickerModal.classList.remove('hidden');
+      const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
+      showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
+    }
+  });
+
+  dmMediaPickerBtnEl.addEventListener('click', () => {
+    activeComposerContext = 'dm';
     const wasHidden = mediaPickerModal.classList.contains('hidden');
     closeAllPickers();
     if (wasHidden) {
@@ -1241,12 +1274,15 @@
 
   emojiPanel.querySelector('emoji-picker')?.addEventListener('emoji-click', (event) => {
     const emoji = event.detail.unicode;
-    const start = input.selectionStart ?? input.value.length;
-    const end = input.selectionEnd ?? input.value.length;
-    input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
-    input.setSelectionRange(start + emoji.length, start + emoji.length);
-    input.style.height = 'auto';
-    input.style.height = input.scrollHeight + 'px';
+    const targetInput = activeComposerContext === 'dm' ? dmInputEl : input;
+    const start = targetInput.selectionStart ?? targetInput.value.length;
+    const end = targetInput.selectionEnd ?? targetInput.value.length;
+    targetInput.value = targetInput.value.slice(0, start) + emoji + targetInput.value.slice(end);
+    targetInput.setSelectionRange(start + emoji.length, start + emoji.length);
+    targetInput.style.height = 'auto';
+    targetInput.style.height = targetInput.scrollHeight + 'px';
+    if (activeComposerContext === 'dm') updateDMVoiceBtnVisibility();
+    else updateVoiceBtnVisibility();
   });
 
   // ── Email auth toggle ──────────────────────────────────
@@ -1855,6 +1891,11 @@
         mediaContent = safeUrl
           ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safeUrl)}" alt="Photo" loading="lazy"></a>`
           : '<div class="msg__text">[Photo]</div>';
+      } else if (data.type === 'photos') {
+        const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
+        mediaContent = safeUrls.length
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="lazy"></a>`).join('')}</div>`
+          : '<div class="msg__text">[Photos]</div>';
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
@@ -1944,6 +1985,36 @@
     }
   }
 
+  async function sendDMMedia(fields) {
+    const user = auth.currentUser;
+    if (!user || !cachedIsAllowed || !currentDMConversationId || !currentDMPartnerUid) return;
+    try {
+      const convRef = db.collection('directMessages').doc(currentDMConversationId);
+      const convSnap = await convRef.get();
+      if (!convSnap.exists) {
+        await convRef.set({
+          participants: [user.uid, currentDMPartnerUid].sort(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastMessage: '',
+        });
+      }
+      await convRef.collection('messages').add({
+        ...fields,
+        uid: user.uid,
+        displayName: currentProfile.displayName || user.displayName || user.email || 'User',
+        avatar: currentProfile.avatar,
+        avatarUrl: currentProfile.avatarUrl,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await convRef.update({
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastMessage: String(fields.text || '').slice(0, 100),
+      });
+    } catch (err) {
+      console.error('DM media send failed:', err);
+    }
+  }
+
   function openDM(partnerUid) {
     const user = auth.currentUser;
     if (!user || partnerUid === user.uid || !cachedIsAllowed) return;
@@ -1957,6 +2028,7 @@
     subscribeDMMessages(currentDMConversationId, user);
     subscribeDMTyping(currentDMConversationId, user.uid);
     dmPanelEl.classList.remove('hidden');
+    updateDMVoiceBtnVisibility();
     dmInputEl?.focus();
   }
 
@@ -1970,6 +2042,7 @@
     if (dmMessagesEl) dmMessagesEl.innerHTML = '';
     clearDMSelection();
     clearDMReply();
+    if (isRecordingForDM && mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
   }
 
   // ── Users panel ────────────────────────────────────────
@@ -2141,6 +2214,7 @@
   dmInputEl.addEventListener('input', () => {
     dmInputEl.style.height = 'auto';
     dmInputEl.style.height = dmInputEl.scrollHeight + 'px';
+    updateDMVoiceBtnVisibility();
     const uid = auth.currentUser?.uid;
     if (uid && cachedIsAllowed && currentDMConversationId && dmInputEl.value.trim()) {
       handleTypingInput(uid, currentDMConversationId);
@@ -2255,21 +2329,38 @@
     sendBtn.classList.toggle('hidden', !hasText);
   }
 
-  function showRecordingUI() {
-    form.classList.add('hidden');
-    voiceRecordingUi.classList.remove('hidden');
+  function updateDMVoiceBtnVisibility() {
+    if (!voiceSupported) return;
+    const hasText = dmInputEl.value.trim().length > 0;
+    dmVoiceBtnEl.classList.toggle('hidden', hasText);
+    dmSendBtnEl.classList.toggle('hidden', !hasText);
+  }
+
+  function showRecordingUI(isDM = false) {
+    if (isDM) {
+      dmFormEl.classList.add('hidden');
+      dmVoiceRecordingUiEl.classList.remove('hidden');
+    } else {
+      form.classList.add('hidden');
+      voiceRecordingUi.classList.remove('hidden');
+    }
   }
 
   function hideRecordingUI() {
     voiceRecordingUi.classList.add('hidden');
     form.classList.remove('hidden');
+    dmVoiceRecordingUiEl.classList.add('hidden');
+    dmFormEl.classList.remove('hidden');
+    isRecordingForDM = false;
     updateVoiceBtnVisibility();
+    updateDMVoiceBtnVisibility();
   }
 
-  async function startRecording() {
+  async function startRecording(isDM = false) {
     if (!cachedIsAllowed || !voiceSupported) return;
     try {
       closeAllPickers();
+      isRecordingForDM = isDM;
       recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getSupportedMimeType();
       const options = mimeType ? { mimeType } : {};
@@ -2280,15 +2371,17 @@
       });
       mediaRecorder.start(100);
       recordingStartTime = Date.now();
-      showRecordingUI();
-      voiceTimer.textContent = '0:00';
+      showRecordingUI(isDM);
+      const timerEl = isDM ? dmVoiceTimerEl : voiceTimer;
+      timerEl.textContent = '0:00';
       let elapsed = 0;
       recordingTimerInterval = setInterval(() => {
         elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-        voiceTimer.textContent = formatDuration(elapsed);
+        timerEl.textContent = formatDuration(elapsed);
         if (elapsed >= MAX_RECORDING_SECONDS) stopAndSendRecording();
       }, 500);
     } catch (err) {
+      isRecordingForDM = false;
       const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
       messageStatus.textContent = denied ? 'Microphone access denied.' : 'Could not access microphone.';
     }
@@ -2328,27 +2421,36 @@
     const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
     const fileName = `${Date.now()}.${ext}`;
     const storageRef = storage.ref(`voice-messages/${user.uid}/${fileName}`);
-    messageStatus.textContent = 'Sending…';
+    if (!isRecordingForDM) messageStatus.textContent = 'Sending…';
+    const wasDM = isRecordingForDM;
     try {
       const snapshot = await storageRef.put(blob, { contentType: mimeType });
       const audioUrl = await snapshot.ref.getDownloadURL();
-      const voiceData = {
-        type: 'voice',
-        audioUrl,
-        duration,
-        text: '[Voice message]',
-        uid: user.uid,
-        displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
-        avatar: currentProfile.avatar,
-        avatarUrl: currentProfile.avatarUrl,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      };
-      if (replyTo) voiceData.replyTo = replyTo;
-      await db.collection('messages').add(voiceData);
-      messageStatus.textContent = '';
-      clearReply();
+      if (wasDM) {
+        const fields = { type: 'voice', audioUrl, duration, text: '[Voice message]' };
+        if (dmReplyTo) fields.replyTo = dmReplyTo;
+        await sendDMMedia(fields);
+        clearDMReply();
+      } else {
+        const voiceData = {
+          type: 'voice',
+          audioUrl,
+          duration,
+          text: '[Voice message]',
+          uid: user.uid,
+          displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+          avatar: currentProfile.avatar,
+          avatarUrl: currentProfile.avatarUrl,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        };
+        if (replyTo) voiceData.replyTo = replyTo;
+        await db.collection('messages').add(voiceData);
+        messageStatus.textContent = '';
+        clearReply();
+      }
     } catch (err) {
-      messageStatus.textContent = `Voice message failed: ${err.message}`;
+      if (!wasDM) messageStatus.textContent = `Voice message failed: ${err.message}`;
+      else console.error('DM voice message failed:', err);
     }
   }
 
@@ -2408,9 +2510,12 @@
     }
   }
 
-  voiceBtn.addEventListener('click', startRecording);
+  voiceBtn.addEventListener('click', () => startRecording(false));
   voiceCancelBtn.addEventListener('click', cancelRecording);
   voiceSendBtn.addEventListener('click', stopAndSendRecording);
+  dmVoiceBtnEl.addEventListener('click', () => startRecording(true));
+  dmVoiceCancelBtnEl.addEventListener('click', cancelRecording);
+  dmVoiceSendBtnEl.addEventListener('click', stopAndSendRecording);
   updateVoiceBtnVisibility();
 
   // ── Photo multi-select preview ───────────────────────────
@@ -2463,15 +2568,55 @@
 
   async function sendPendingPhotos(isDM) {
     const pending = isDM ? dmPendingPhotos : pendingPhotos;
-    const sendBtn = document.getElementById(isDM ? 'dm-photo-preview-send' : 'photo-preview-send');
+    const sendBtnEl = document.getElementById(isDM ? 'dm-photo-preview-send' : 'photo-preview-send');
     if (pending.length === 0) return;
-    sendBtn.disabled = true;
+    sendBtnEl.disabled = true;
     const files = pending.map(p => p.file);
     clearPhotoPreview(isDM);
-    for (const file of files) {
-      await sendPhotoMessage(file, isDM);
+    await sendPhotosBulk(files, isDM);
+    sendBtnEl.disabled = false;
+  }
+
+  async function sendPhotosBulk(files, isDM) {
+    const user = auth.currentUser;
+    if (!user || !cachedIsAllowed) return;
+    const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
+    if (!valid.length) return;
+    if (!isDM) messageStatus.textContent = 'Uploading…';
+    try {
+      const uploads = valid.map((file) => {
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'jpg'}`;
+        const ref = storage.ref(`photos/${user.uid}/${fileName}`);
+        return ref.put(file, { contentType: file.type }).then(snap => snap.ref.getDownloadURL());
+      });
+      const photoUrls = await Promise.all(uploads);
+      const isSingle = photoUrls.length === 1;
+      const fields = isSingle
+        ? { type: 'photo', photoUrl: photoUrls[0], text: '[Photo]' }
+        : { type: 'photos', photoUrls, text: '[Photos]' };
+      if (isDM) {
+        if (dmReplyTo) fields.replyTo = dmReplyTo;
+        await sendDMMedia(fields);
+        clearDMReply();
+      } else {
+        const msgData = {
+          ...fields,
+          uid: user.uid,
+          displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+          avatar: currentProfile.avatar,
+          avatarUrl: currentProfile.avatarUrl,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        };
+        if (replyTo) msgData.replyTo = replyTo;
+        await db.collection('messages').add(msgData);
+        clearReply();
+        messageStatus.textContent = '';
+      }
+    } catch (err) {
+      if (!isDM) messageStatus.textContent = `Photo upload failed: ${err.message}`;
+      else console.error('DM photo upload failed:', err);
     }
-    sendBtn.disabled = false;
   }
 
   document.getElementById('photo-preview-cancel').addEventListener('click', () => clearPhotoPreview(false));
