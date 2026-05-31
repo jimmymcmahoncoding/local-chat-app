@@ -535,6 +535,14 @@ body {
   border-top: 1px solid var(--border);
   background: var(--composer-bg);
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+/* Push messages up when the picker is open so nothing is hidden behind it */
+#chat-section.picker-open #messages,
+#chat-section.picker-open .dm-messages {
+  padding-bottom: 45vh;
 }
 
 .media-picker-modal__tabs {

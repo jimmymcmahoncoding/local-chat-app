@@ -1022,6 +1022,7 @@
 
   function closeAllPickers() {
     mediaPickerModal.classList.add('hidden');
+    chatSection.classList.remove('picker-open');
   }
 
   // ── Sticker panel ───────────────────────────────────────
@@ -1234,6 +1235,7 @@
     closeAllPickers();
     if (wasHidden) {
       mediaPickerModal.classList.remove('hidden');
+      chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
     }
@@ -1245,6 +1247,7 @@
     closeAllPickers();
     if (wasHidden) {
       mediaPickerModal.classList.remove('hidden');
+      chatSection.classList.add('picker-open');
       const activeTab = mediaPickerModal.querySelector('.media-picker-tab--active');
       showPickerTab(activeTab ? activeTab.dataset.tab : 'emoji');
     }
@@ -1255,10 +1258,18 @@
   });
 
   messagesEl.addEventListener('click', closeAllPickers);
+  dmMessagesEl.addEventListener('click', closeAllPickers);
 
   gifSearchInput.addEventListener('input', () => {
     clearTimeout(gifSearchTimeout);
-    gifSearchTimeout = setTimeout(() => fetchGifs(gifSearchInput.value.trim(), 0), 400);
+    gifSearchTimeout = setTimeout(() => {
+      fetchGifs(gifSearchInput.value.trim(), 0);
+      gifSearchInput.blur();
+    }, 400);
+  });
+
+  gifSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); gifSearchInput.blur(); }
   });
 
   gifResults.addEventListener('scroll', () => {
