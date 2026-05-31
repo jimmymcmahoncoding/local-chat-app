@@ -305,9 +305,28 @@
           </div>
         </div>
       </div>
+      <div id="dm-msg-action-bar" class="msg-action-bar hidden">
+        <button id="dm-action-bar-close" class="action-bar__close" aria-label="Dismiss selection">✕</button>
+        <span id="dm-action-bar-label" class="action-bar__label">1 selected</span>
+        <div class="action-bar__btns">
+          <button id="dm-action-bar-delete" class="action-bar__btn action-bar__btn--delete hidden"
+            aria-label="Delete">🗑️ Delete</button>
+          <button id="dm-action-bar-reply" class="action-bar__btn" aria-label="Reply">↩ Reply</button>
+          <button id="dm-action-bar-react" class="action-bar__btn" aria-label="React">😊 React</button>
+        </div>
+      </div>
       <div id="dm-messages" class="dm-messages" aria-live="polite"></div>
       <div id="dm-typing-indicator" class="dm-typing-indicator hidden" aria-live="polite" aria-atomic="true"></div>
       <div class="dm-composer">
+        <div id="dm-reply-preview" class="reply-preview hidden">
+          <div class="reply-preview__bar"></div>
+          <div class="reply-preview__content">
+            <span id="dm-reply-preview-name" class="reply-preview__name"></span>
+            <span id="dm-reply-preview-text" class="reply-preview__text"></span>
+          </div>
+          <button id="dm-reply-cancel-btn" type="button" class="reply-preview__close"
+            aria-label="Cancel reply">✕</button>
+        </div>
         <input type="file" id="dm-photo-input" accept="image/*" multiple class="hidden" aria-hidden="true">
         <input type="file" id="dm-camera-input" accept="image/*" capture="environment" class="hidden"
           aria-hidden="true">
@@ -321,6 +340,10 @@
           </div>
         </div>
         <form id="dm-form">
+          <button type="button" id="dm-media-picker-btn" class="btn-composer-icon"
+            aria-label="Add emoji, GIF or sticker" title="Add emoji, GIF or sticker">😊</button>
+          <textarea id="dm-input" maxlength="500" placeholder="Message…" required autocomplete="off"
+            rows="1"></textarea>
           <div class="photo-btn-wrap">
             <button type="button" id="dm-photo-btn" class="btn-composer-icon" aria-label="Send a photo"
               title="Send a photo">
@@ -352,8 +375,16 @@
               </button>
             </div>
           </div>
-          <textarea id="dm-input" maxlength="500" placeholder="Message…" required autocomplete="off"
-            rows="1"></textarea>
+          <button type="button" id="dm-voice-btn" class="btn-composer-icon btn-voice" aria-label="Record voice message"
+            title="Record voice message">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 10a7 7 0 0 0 14 0" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+              <line x1="8" y1="22" x2="16" y2="22" />
+            </svg>
+          </button>
           <button type="submit" class="btn-send" aria-label="Send message">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -362,6 +393,17 @@
             </svg>
           </button>
         </form>
+        <div id="dm-voice-recording-ui" class="voice-recording-ui hidden" aria-live="assertive">
+          <button type="button" id="dm-voice-cancel-btn" class="voice-cancel-btn"
+            aria-label="Cancel recording">✕</button>
+          <div class="voice-recording-indicator">
+            <span class="voice-recording-dot" aria-hidden="true"></span>
+            <span id="dm-voice-timer" class="voice-timer">0:00</span>
+            <span class="voice-recording-label">Recording…</span>
+          </div>
+          <button type="button" id="dm-voice-send-btn" class="voice-send-btn"
+            aria-label="Send voice message">Send</button>
+        </div>
       </div>
     </div>
 

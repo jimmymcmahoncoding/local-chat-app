@@ -107,11 +107,27 @@
   const dmPhotoInputEl = document.getElementById('dm-photo-input');
   const dmCameraInputEl = document.getElementById('dm-camera-input');
   const dmPhotoSourceMenuEl = document.getElementById('dm-photo-source-menu');
+  const dmMediaPickerBtnEl = document.getElementById('dm-media-picker-btn');
+  const dmVoiceBtnEl = document.getElementById('dm-voice-btn');
+  const dmVoiceRecordingUiEl = document.getElementById('dm-voice-recording-ui');
+  const dmVoiceTimerEl = document.getElementById('dm-voice-timer');
+  const dmVoiceCancelBtnEl = document.getElementById('dm-voice-cancel-btn');
+  const dmVoiceSendBtnEl = document.getElementById('dm-voice-send-btn');
+  const dmSendBtnEl = dmFormEl.querySelector('.btn-send');
   const chatsBtnEl = document.getElementById('chats-btn');
   const chatsBadgeEl = document.getElementById('chats-badge');
   const chatsPanelEl = document.getElementById('chats-panel');
   const chatsPanelListEl = document.getElementById('chats-panel-list');
   const newDmBtnEl = document.getElementById('new-dm-btn');
+  const dmMsgActionBarEl = document.getElementById('dm-msg-action-bar');
+  const dmActionBarCloseEl = document.getElementById('dm-action-bar-close');
+  const dmActionBarDeleteEl = document.getElementById('dm-action-bar-delete');
+  const dmActionBarReplyEl = document.getElementById('dm-action-bar-reply');
+  const dmActionBarReactEl = document.getElementById('dm-action-bar-react');
+  const dmReplyPreviewEl = document.getElementById('dm-reply-preview');
+  const dmReplyPreviewNameEl = document.getElementById('dm-reply-preview-name');
+  const dmReplyPreviewTextEl = document.getElementById('dm-reply-preview-text');
+  const dmReplyCancelBtnEl = document.getElementById('dm-reply-cancel-btn');
 
   let unsubscribeMessages = null;
   let swRegistration = null;
@@ -128,9 +144,14 @@
   let isSignUpMode = false;
   let unsubscribePending = null;
   let reactionPickerTargetId = null;
+  let reactionPickerIsDM = false;
   let selectedMsgId = null;
   let selectedMsgData = null;
   let selectedMsgIsOwn = false;
+  let selectedDMMsgId = null;
+  let selectedDMMsgData = null;
+  let selectedDMMsgIsOwn = false;
+  let dmReplyTo = null;
 
   // ── Presence ──────────────────────────────────────────────
   const presenceCache = new Map();
@@ -156,6 +177,8 @@
   let unsubscribeDMConversations = null;
   const dmUnreadCounts = new Map();
   let dmConversationsLoaded = false;
+  let activeComposerContext = 'main'; // 'main' | 'dm'
+  let isRecordingForDM = false;
 
   let mediaRecorder = null;
   let audioChunks = [];
@@ -251,6 +274,98 @@
     msgActionBar.classList.add('hidden');
     globalReactionPicker.classList.add('hidden');
     reactionPickerTargetId = null;
+  }
+
+  function selectDMMessage(docId, data, isOwn) {
+    const prev = dmMessagesEl.querySelector('.msg--selected');
+    if (prev) prev.classList.remove('msg--selected');
+    if (selectedDMMsgId === docId) {
+      selectedDMMsgId = null;
+      selectedDMMsgData = null;
+      selectedDMMsgIsOwn = false;
+      dmMsgActionBarEl.classList.add('hidden');
+      return;
+    }
+    selectedDMMsgId = docId;
+    selectedDMMsgData = data;
+    selectedDMMsgIsOwn = isOwn;
+    const wrapper = dmMessagesEl.querySelector(`[data-message-id="${CSS.escape(docId)}"]`);
+    if (wrapper) wrapper.classList.add('msg--selected');
+    dmActionBarDeleteEl.classList.toggle('hidden', !isOwn);
+    dmMsgActionBarEl.classList.remove('hidden');
+  }
+
+  function clearDMSelection() {
+    const prev = dmMessagesEl.querySelector('.msg--selected');
+    if (prev) prev.classList.remove('msg--selected');
+    selectedDMMsgId = null;
+    selectedDMMsgData = null;
+    selectedDMMsgIsOwn = false;
+    dmMsgActionBarEl.classList.add('hidden');
+    globalReactionPicker.classList.add('hidden');
+    reactionPickerTargetId = null;
+    reactionPickerIsDM = false;
+  }
+
+  async function toggleDMReaction(messageId, emoji, uid) {
+    if (!cachedIsAllowed || !uid || !REACTION_EMOJIS.includes(emoji) || !currentDMConversationId) return;
+    try {
+      const ref = db.collection('directMessages').doc(currentDMConversationId)
+        .collection('messages').doc(messageId);
+      const snap = await ref.get();
+      if (!snap.exists) return;
+      const uids = (snap.data().reactions?.[emoji]) || [];
+      await ref.update({
+        [`reactions.${emoji}`]: uids.includes(uid)
+          ? firebase.firestore.FieldValue.arrayRemove(uid)
+          : firebase.firestore.FieldValue.arrayUnion(uid)
+      });
+    } catch (err) {
+      console.error('DM reaction failed:', err);
+    }
+  }
+
+  async function deleteDMMessage(docId) {
+    if (!confirm('Delete this message?')) return;
+    if (!currentDMConversationId) return;
+    try {
+      await db.collection('directMessages').doc(currentDMConversationId)
+        .collection('messages').doc(docId).delete();
+    } catch (err) {
+      console.error('DM delete failed:', err);
+    }
+  }
+
+  function setDMReply(data, docId) {
+    let replyText;
+    if (data.type === 'gif') replyText = '[GIF]';
+    else if (data.type === 'sticker') replyText = `[Sticker] ${data.sticker || ''}`;
+    else if (data.type === 'voice') replyText = '[Voice message 🎤]';
+    else if (data.type === 'photo') replyText = '[Photo 📷]';
+    else replyText = String(data.text || '').slice(0, 200);
+    dmReplyTo = {
+      text: replyText,
+      displayName: String(data.displayName || 'User').slice(0, 50),
+      messageId: docId,
+    };
+    dmReplyPreviewNameEl.textContent = dmReplyTo.displayName;
+    dmReplyPreviewTextEl.textContent = dmReplyTo.text;
+    dmReplyPreviewEl.classList.remove('hidden');
+    closeAllPickers();
+    dmInputEl.focus();
+  }
+
+  function clearDMReply() {
+    dmReplyTo = null;
+    dmReplyPreviewEl.classList.add('hidden');
+  }
+
+  function scrollToDMMessage(messageId) {
+    const target = dmMessagesEl.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('msg--highlight');
+    setTimeout(() => target.classList.remove('msg--highlight'), 1500);
   }
 
   const BUBBLE_PALETTE = [
@@ -1250,14 +1365,20 @@
 
   document.addEventListener('click', () => {
     clearSelection();
+    clearDMSelection();
   });
   globalReactionPicker.addEventListener('click', (e) => e.stopPropagation());
   globalReactionPicker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (reactionPickerTargetId) {
-        toggleReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+        if (reactionPickerIsDM) {
+          toggleDMReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+        } else {
+          toggleReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+        }
       }
       clearSelection();
+      clearDMSelection();
     });
   });
 
@@ -1281,8 +1402,38 @@
     const alreadyOpen = reactionPickerTargetId === selectedMsgId && !globalReactionPicker.classList.contains('hidden');
     globalReactionPicker.classList.add('hidden');
     reactionPickerTargetId = null;
+    reactionPickerIsDM = false;
     if (!alreadyOpen) showReactionPicker(selectedMsgId, e.currentTarget);
   });
+
+  dmMsgActionBarEl.addEventListener('click', (e) => e.stopPropagation());
+  dmActionBarCloseEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearDMSelection();
+  });
+  dmActionBarDeleteEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedDMMsgId) deleteDMMessage(selectedDMMsgId);
+    clearDMSelection();
+  });
+  dmActionBarReplyEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedDMMsgData && selectedDMMsgId) setDMReply(selectedDMMsgData, selectedDMMsgId);
+    clearDMSelection();
+  });
+  dmActionBarReactEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!selectedDMMsgId) return;
+    const alreadyOpen = reactionPickerTargetId === selectedDMMsgId && !globalReactionPicker.classList.contains('hidden');
+    globalReactionPicker.classList.add('hidden');
+    reactionPickerTargetId = null;
+    reactionPickerIsDM = false;
+    if (!alreadyOpen) {
+      reactionPickerIsDM = true;
+      showReactionPicker(selectedDMMsgId, e.currentTarget);
+    }
+  });
+  dmReplyCancelBtnEl.addEventListener('click', clearDMReply);
 
   // ── Read receipts (seenBy) ────────────────────────────
   function flushSeenUpdates() {
@@ -1675,7 +1826,7 @@
     const atBottom = dmMessagesEl.scrollHeight - dmMessagesEl.scrollTop - dmMessagesEl.clientHeight < 150;
     dmMessagesEl.innerHTML = '';
     if (snapshot.empty) {
-      dmMessagesEl.innerHTML = '<p class="dm-messages-empty">No messages yet. Say hello! \ud83d\udc4b</p>';
+      dmMessagesEl.innerHTML = '<p class="dm-messages-empty">No messages yet. Say hello! 👋</p>';
       return;
     }
     snapshot.docs.forEach((doc) => {
@@ -1695,8 +1846,9 @@
         mediaContent = `<div class="msg__sticker">${escapeHtml(data.sticker || '')}</div>`;
       } else if (data.type === 'voice') {
         const safeUrl = isValidStorageUrl(data.audioUrl || '') ? data.audioUrl : '';
+        const dur = typeof data.duration === 'number' ? formatDuration(data.duration) : '';
         mediaContent = safeUrl
-          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeUrl)}" controls preload="none"></audio></div>`
+          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
           : '<div class="msg__text">[Voice message]</div>';
       } else if (data.type === 'photo') {
         const safeUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
@@ -1706,15 +1858,44 @@
       } else {
         mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
       }
+
+      const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
+        ? `<div class="msg__reply">
+            <span class="msg__reply__name">${escapeHtml(String(data.replyTo.displayName || '').slice(0, 50))}</span>
+            <span class="msg__reply__text">${escapeHtml(String(data.replyTo.text || '').slice(0, 120))}</span>
+          </div>`
+        : '';
+
+      const reactionsHtml = buildReactionsBar(data.reactions, currentUser?.uid);
+
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
       if (isOwn) {
-        wrapper.innerHTML = `<div class="msg__body"><div class="msg__bubble">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
+        wrapper.innerHTML = `<div class="msg__body"><div class="msg__bubble">${replyBlock}${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div>${reactionsHtml}</div>`;
       } else {
         const avatarHtml = renderAvatarHtml(data.avatar, data.avatarUrl, displayName);
         const bubbleStyle = data.uid ? getBubbleStyle(data.uid) : '';
-        wrapper.innerHTML = `${avatarHtml}<div class="msg__content"><div class="msg__name">${escapeHtml(displayName)}</div><div class="msg__bubble" style="${bubbleStyle}">${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div></div>`;
+        wrapper.innerHTML = `${avatarHtml}<div class="msg__content"><div class="msg__name">${escapeHtml(displayName)}</div><div class="msg__bubble" style="${bubbleStyle}">${replyBlock}${mediaContent}<div class="msg__time">${escapeHtml(time)}</div></div>${reactionsHtml}</div>`;
       }
+
+      wrapper.dataset.messageId = doc.id;
+      wrapper.dataset.senderUid = data.uid || '';
+      if (doc.id === selectedDMMsgId) wrapper.classList.add('msg--selected');
+      wrapper.querySelector('.msg__bubble').addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectDMMessage(doc.id, data, isOwn);
+      });
+      const replyQuote = wrapper.querySelector('.msg__reply');
+      if (replyQuote && data.replyTo?.messageId) {
+        replyQuote.classList.add('msg__reply--linkable');
+        replyQuote.addEventListener('click', (e) => {
+          e.stopPropagation();
+          scrollToDMMessage(data.replyTo.messageId);
+        });
+      }
+      wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
+        pill.addEventListener('click', () => toggleDMReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
+      });
       dmMessagesEl.appendChild(wrapper);
     });
     if (atBottom) dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
@@ -1742,18 +1923,21 @@
           lastMessage: '',
         });
       }
-      await convRef.collection('messages').add({
+      const dmMsgData = {
         text,
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'User',
         avatar: currentProfile.avatar,
         avatarUrl: currentProfile.avatarUrl,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+      if (dmReplyTo) dmMsgData.replyTo = dmReplyTo;
+      await convRef.collection('messages').add(dmMsgData);
       await convRef.update({
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         lastMessage: text.slice(0, 100),
       });
+      clearDMReply();
       clearTypingStatus(user.uid);
     } catch (err) {
       console.error('DM send failed:', err);
@@ -1784,6 +1968,8 @@
     currentDMConversationId = null;
     dmPanelEl.classList.add('hidden');
     if (dmMessagesEl) dmMessagesEl.innerHTML = '';
+    clearDMSelection();
+    clearDMReply();
   }
 
   // ── Users panel ────────────────────────────────────────
