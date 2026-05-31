@@ -460,7 +460,11 @@
     const pills = entries.map(([emoji, uids]) => {
       if (!REACTION_EMOJIS.includes(emoji)) return '';
       const mine = currentUid && uids.includes(currentUid);
-      return `<button class="reaction-pill${mine ? ' reaction-pill--mine' : ''}" data-emoji="${escapeHtml(emoji)}" type="button">${escapeHtml(emoji)}<span class="reaction-pill__count">${uids.length}</span></button>`;
+      const names = uids.map((uid) => {
+        const p = profilesCache.get(uid);
+        return p?.displayName || 'Someone';
+      }).join(', ');
+      return `<button class="reaction-pill${mine ? ' reaction-pill--mine' : ''}" data-emoji="${escapeHtml(emoji)}" type="button" title="${escapeHtml(names)}">${escapeHtml(emoji)}<span class="reaction-pill__count">${uids.length}</span></button>`;
     }).join('');
     if (!pills) return '';
     return `<div class="msg__reactions">${pills}</div>`;
