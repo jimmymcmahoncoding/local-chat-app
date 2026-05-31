@@ -1307,6 +1307,29 @@
     if (gifHasMore && !gifFetching) fetchGifs(gifCurrentQuery, gifOffset);
   });
 
+  // Dismiss keyboard when the user presses the search/Enter key in the emoji picker's
+  // internal search box (lives in the shadow DOM of the <emoji-picker> element).
+  customElements.whenDefined('emoji-picker').then(() => {
+    const pickerEl = emojiPanel.querySelector('emoji-picker');
+    if (!pickerEl) return;
+    const wireEmojiSearchBlur = () => {
+      const searchInput = pickerEl.shadowRoot?.querySelector('input[type="search"], input.search');
+      if (searchInput) {
+        searchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); searchInput.blur(); }
+        });
+      }
+    };
+    // The shadow root may not be populated yet — retry once the element upgrades
+    if (pickerEl.shadowRoot) {
+      wireEmojiSearchBlur();
+    } else {
+      pickerEl.addEventListener('load', wireEmojiSearchBlur, { once: true });
+      // Fallback: try after a short tick in case 'load' doesn't fire
+      setTimeout(wireEmojiSearchBlur, 500);
+    }
+  });
+
   emojiPanel.querySelector('emoji-picker')?.addEventListener('emoji-click', (event) => {
     const emoji = event.detail.unicode;
     const targetInput = activeComposerContext === 'dm' ? dmInputEl : input;
