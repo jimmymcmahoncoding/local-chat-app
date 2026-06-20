@@ -1181,6 +1181,10 @@
   });
   document.getElementById('profile-cancel-btn').addEventListener('click', closeProfileModal);
   document.getElementById('profile-save-btn').addEventListener('click', saveProfile);
+  document.getElementById('modal-sign-out-btn').addEventListener('click', () => {
+    closeProfileModal();
+    signOutBtn.click();
+  });
 
   const avatarPhotoInput = document.getElementById('avatar-photo-input');
   const avatarUploadBtn = document.getElementById('avatar-upload-photo-btn');
