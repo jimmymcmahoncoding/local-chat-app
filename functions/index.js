@@ -31,6 +31,8 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     if (data.type === 'voice') body = '🎤 Voice message';
     else if (data.type === 'gif') body = '🖼️ GIF';
     else if (data.type === 'sticker') body = `${data.sticker || '🎭'} Sticker`;
+    else if (data.type === 'photo' || data.type === 'photos') body = '📷 Photo';
+    else if (data.type === 'poll') body = `📊 Poll: ${String(data.question || '').trim().slice(0, 100)}`;
     else body = String(data.text || '').trim().slice(0, 200) || 'New message';
 
     const db = getFirestore();
@@ -120,6 +122,66 @@ exports.sendMessageNotification = onDocumentCreated('messages/{messageId}', asyn
     }
     if (hasDeletions) await batch.commit();
 });
+
+// ── Link preview helpers ────────────────────────────────────────────────────
+
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+
+async function fetchPreview(url) {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(url, {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KidsChatBot/1.0)' },
+        });
+        clearTimeout(timer);
+        if (!res.ok) return null;
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('text/html')) return null;
+        const html = await res.text();
+        const meta = (prop) => {
+            const m = html.match(new RegExp(`<meta[^>]*(?:property|name)=["']${prop}["'][^>]*content=["']([^"']{1,500})["']`, 'i'))
+                     || html.match(new RegExp(`<meta[^>]*content=["']([^"']{1,500})["'][^>]*(?:property|name)=["']${prop}["']`, 'i'));
+            return m ? m[1].trim() : null;
+        };
+        const titleMatch = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
+        return {
+            url,
+            title: (meta('og:title') || titleMatch?.[1] || '').slice(0, 100),
+            description: (meta('og:description') || meta('description') || '').slice(0, 200),
+            image: (meta('og:image') || '').slice(0, 500),
+            siteName: (meta('og:site_name') || new URL(url).hostname).slice(0, 50),
+        };
+    } catch {
+        return null;
+    }
+}
+
+exports.generateLinkPreview = onDocumentCreated('messages/{messageId}', async (event) => {
+    const data = event.data.data();
+    if (!data || data.type) return; // only plain text messages
+    const text = String(data.text || '');
+    const match = text.match(URL_RE);
+    if (!match) return;
+    const preview = await fetchPreview(match[0]);
+    if (!preview || !preview.title) return;
+    await event.data.ref.update({ linkPreview: preview });
+});
+
+exports.generateDMLinkPreview = onDocumentCreated(
+    'directMessages/{convId}/messages/{msgId}',
+    async (event) => {
+        const data = event.data.data();
+        if (!data || data.type) return;
+        const text = String(data.text || '');
+        const match = text.match(URL_RE);
+        if (!match) return;
+        const preview = await fetchPreview(match[0]);
+        if (!preview || !preview.title) return;
+        await event.data.ref.update({ linkPreview: preview });
+    }
+);
 
 // ── sendTestNotification ───────────────────────────────────────────────────
 // Callable function: sends a real FCM push notification to the calling user's

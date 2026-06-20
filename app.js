@@ -133,6 +133,30 @@
   const dmReplyPreviewTextEl = document.getElementById('dm-reply-preview-text');
   const dmReplyCancelBtnEl = document.getElementById('dm-reply-cancel-btn');
 
+  // ── New feature elements ───────────────────────────────────
+  const albumBtnEl = document.getElementById('album-btn');
+  const albumPanelEl = document.getElementById('album-panel');
+  const albumGridEl = document.getElementById('album-grid');
+  const albumPanelCloseBtnEl = document.getElementById('album-panel-close-btn');
+  const searchBtnEl = document.getElementById('search-btn');
+  const searchBarEl = document.getElementById('search-bar');
+  const searchInputEl = document.getElementById('search-input');
+  const searchClearBtnEl = document.getElementById('search-clear-btn');
+  const actionBarEditEl = document.getElementById('action-bar-edit');
+  const dmActionBarEditEl = document.getElementById('dm-action-bar-edit');
+  const editModalEl = document.getElementById('edit-modal');
+  const editInputEl = document.getElementById('edit-input');
+  const editSaveBtnEl = document.getElementById('edit-save-btn');
+  const editCancelBtnEl = document.getElementById('edit-cancel-btn');
+  const editStatusEl = document.getElementById('edit-status');
+  const pollBtnEl = document.getElementById('poll-btn');
+  const pollModalEl = document.getElementById('poll-modal');
+  const pollQuestionInputEl = document.getElementById('poll-question-input');
+  const pollSendBtnEl = document.getElementById('poll-send-btn');
+  const pollCancelBtnEl = document.getElementById('poll-cancel-btn');
+  const pollStatusEl = document.getElementById('poll-status');
+  const pollOptionInputs = [1, 2, 3, 4].map((n) => document.getElementById(`poll-opt-${n}`));
+
   let unsubscribeMessages = null;
   let swRegistration = null;
   let sessionStart = null;
@@ -182,6 +206,13 @@
   const dmUnreadCounts = new Map();
   let dmConversationsLoaded = false;
   let activeComposerContext = 'main'; // 'main' | 'dm'
+
+  // ── New feature state ─────────────────────────────────────
+  let lastMessagesSnapshot = null;
+  let lastMessagesUser = null;
+  let searchQuery = '';
+  let editingMsgId = null;
+  let editingIsDM = false;
   let isRecordingForDM = false;
 
   let mediaRecorder = null;
@@ -266,6 +297,8 @@
     const wrapper = messagesEl.querySelector(`[data-message-id="${CSS.escape(docId)}"]`);
     if (wrapper) wrapper.classList.add('msg--selected');
     actionBarDelete.classList.toggle('hidden', !isOwn);
+    const canEdit = isOwn && !data.type && Date.now() - (data.createdAt?.toMillis?.() || 0) < 300000;
+    actionBarEditEl.classList.toggle('hidden', !canEdit);
     msgActionBar.classList.remove('hidden');
   }
 
@@ -296,6 +329,8 @@
     const wrapper = dmMessagesEl.querySelector(`[data-message-id="${CSS.escape(docId)}"]`);
     if (wrapper) wrapper.classList.add('msg--selected');
     dmActionBarDeleteEl.classList.toggle('hidden', !isOwn);
+    const canEditDM = isOwn && !data.type && Date.now() - (data.createdAt?.toMillis?.() || 0) < 300000;
+    dmActionBarEditEl.classList.toggle('hidden', !canEditDM);
     dmMsgActionBarEl.classList.remove('hidden');
   }
 
@@ -450,6 +485,42 @@
     return `background:${bg};color:${text};`;
   }
 
+  function buildPollHtml(data, docId, isDM) {
+    const votes = data.votes || {};
+    const options = Array.isArray(data.options) ? data.options : [];
+    const totalVotes = options.reduce((sum, _, i) => sum + (votes[i]?.length || 0), 0);
+    const optionsHtml = options.map((opt, i) => {
+      const count = votes[i]?.length || 0;
+      const pct = totalVotes ? Math.round((count / totalVotes) * 100) : 0;
+      const voted = Array.isArray(votes[i]) && votes[i].includes(lastMessagesUser?.uid || '');
+      return `<button class="msg__poll__option${voted ? ' msg__poll__option--voted' : ''}" data-poll-id="${escapeHtml(docId)}" data-option="${i}" data-voted="${voted}" data-is-dm="${isDM}" type="button">
+        <div class="msg__poll__option__bar" style="width:${pct}%"></div>
+        <div class="msg__poll__option__label"><span>${escapeHtml(opt)}</span><span class="msg__poll__option__pct">${count ? `${pct}%` : ''}</span></div>
+      </button>`;
+    }).join('');
+    return `<div class="msg__poll">
+      <div class="msg__poll__question">${escapeHtml(data.question || '')}</div>
+      <div class="msg__poll__options">${optionsHtml}</div>
+      <div class="msg__poll__footer">${totalVotes} vote${totalVotes !== 1 ? 's' : ''}</div>
+    </div>`;
+  }
+
+  function buildLinkPreviewHtml(preview) {
+    if (!preview || !preview.title) return '';
+    const safe = (s) => escapeHtml(String(s || ''));
+    const imgHtml = preview.image
+      ? `<img class="msg__link-preview__img" src="${safe(preview.image)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      : '';
+    return `<a class="msg__link-preview" href="${safe(preview.url)}" target="_blank" rel="noopener noreferrer">
+      ${imgHtml}
+      <div class="msg__link-preview__body">
+        <div class="msg__link-preview__site">${safe(preview.siteName)}</div>
+        <div class="msg__link-preview__title">${safe(preview.title)}</div>
+        ${preview.description ? `<div class="msg__link-preview__desc">${safe(preview.description)}</div>` : ''}
+      </div>
+    </a>`;
+  }
+
   function buildReactionsBar(reactions, currentUid) {
     if (!reactions || typeof reactions !== 'object') return '';
     const entries = Object.entries(reactions).filter(([, uids]) => Array.isArray(uids) && uids.length > 0);
@@ -482,9 +553,16 @@
   }
 
   function renderMessages(snapshot, currentUser) {
+    lastMessagesSnapshot = snapshot;
+    lastMessagesUser = currentUser;
     const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 150;
     messagesEl.innerHTML = '';
-    const docs = snapshot.docs;
+    const q = searchQuery.toLowerCase();
+    const docs = snapshot.docs.filter((doc) => {
+      if (!q) return true;
+      const d = doc.data();
+      return String(d.text || d.question || '').toLowerCase().includes(q);
+    });
 
     if (docs.length === 0) {
       messagesEl.innerHTML = '<p class="messages-empty">No messages yet. Say hello! 👋</p>';
@@ -521,8 +599,12 @@
         mediaContent = safeUrls.length
           ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
+      } else if (data.type === 'poll') {
+        mediaContent = buildPollHtml(data, doc.id, false);
       } else {
-        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
+        const editedLabel = data.editedAt ? `<span class="msg__edited">(edited)</span>` : '';
+        const linkPreviewHtml = !data.editedAt ? buildLinkPreviewHtml(data.linkPreview) : '';
+        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName) + editedLabel + linkPreviewHtml;
       }
 
       const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
@@ -607,6 +689,13 @@
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
         pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid, pill.classList.contains('reaction-pill--mine')));
       });
+      wrapper.querySelectorAll('.msg__poll__option').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const voted = btn.dataset.voted === 'true';
+          votePoll(btn.dataset.pollId, Number(btn.dataset.option), currentUser?.uid, voted, btn.dataset.isDm === 'true');
+        });
+      });
 
       // Make sender name/avatar clickable to open DM
       if (!isOwn && data.uid) {
@@ -638,6 +727,100 @@
           img.addEventListener('error', res, { once: true });
         }))).then(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
       }
+    }
+  }
+
+  // ── Message editing ──────────────────────────────────────
+  function openEditModal(msgId, text, isDM) {
+    editingMsgId = msgId;
+    editingIsDM = isDM;
+    editInputEl.value = text;
+    editStatusEl.textContent = '';
+    editModalEl.classList.remove('hidden');
+    editInputEl.focus();
+  }
+
+  async function saveEdit() {
+    if (!editingMsgId) return;
+    const newText = editInputEl.value.trim();
+    if (!newText) { editStatusEl.textContent = 'Message cannot be empty.'; return; }
+    if (newText.length > 500) { editStatusEl.textContent = 'Message too long.'; return; }
+    editSaveBtnEl.disabled = true;
+    try {
+      const ref = editingIsDM
+        ? db.collection('directMessages').doc(currentDMConversationId).collection('messages').doc(editingMsgId)
+        : db.collection('messages').doc(editingMsgId);
+      await ref.update({ text: newText, editedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      editModalEl.classList.add('hidden');
+      editingMsgId = null;
+    } catch (err) {
+      editStatusEl.textContent = `Failed: ${err.message}`;
+    } finally {
+      editSaveBtnEl.disabled = false;
+    }
+  }
+
+  // ── Photo album ───────────────────────────────────────────
+  async function renderPhotoAlbum() {
+    albumGridEl.innerHTML = '<p class="album-grid__empty">Loading…</p>';
+    albumPanelEl.classList.remove('hidden');
+    try {
+      const snap = await db.collection('messages').where('type', 'in', ['photo', 'photos']).get();
+      const items = [];
+      snap.docs.forEach((doc) => {
+        const d = doc.data();
+        if (d.type === 'photo' && isValidStorageUrl(d.photoUrl || '')) {
+          items.push({ url: d.photoUrl, ts: d.createdAt?.seconds || 0 });
+        } else if (d.type === 'photos' && Array.isArray(d.photoUrls)) {
+          d.photoUrls.filter(u => isValidStorageUrl(u)).forEach((url) => {
+            items.push({ url, ts: d.createdAt?.seconds || 0 });
+          });
+        }
+      });
+      items.sort((a, b) => b.ts - a.ts);
+      if (!items.length) {
+        albumGridEl.innerHTML = '<p class="album-grid__empty">No photos yet.</p>';
+        return;
+      }
+      albumGridEl.innerHTML = items.map(({ url }) =>
+        `<div class="album-grid__item"><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(url)}" alt="Photo" loading="lazy"></a></div>`
+      ).join('');
+    } catch (err) {
+      albumGridEl.innerHTML = `<p class="album-grid__empty">Failed to load: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  // ── Polls ─────────────────────────────────────────────────
+  async function sendPoll(question, options) {
+    const user = auth.currentUser;
+    if (!user || !cachedIsAllowed) return;
+    await db.collection('messages').add({
+      type: 'poll',
+      question,
+      options,
+      votes: {},
+      text: '[Poll]',
+      uid: user.uid,
+      displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
+      avatar: currentProfile.avatar,
+      avatarUrl: currentProfile.avatarUrl,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  async function votePoll(messageId, optionIndex, uid, alreadyVoted, isDM) {
+    if (!cachedIsAllowed || !uid) return;
+    try {
+      const ref = isDM
+        ? db.collection('directMessages').doc(currentDMConversationId).collection('messages').doc(messageId)
+        : db.collection('messages').doc(messageId);
+      await ref.update({
+        [`votes.${optionIndex}`]: alreadyVoted
+          ? firebase.firestore.FieldValue.arrayRemove(uid)
+          : firebase.firestore.FieldValue.arrayUnion(uid),
+      });
+    } catch (err) {
+      console.error('Poll vote failed:', err);
     }
   }
 
@@ -1499,6 +1682,11 @@
     if (selectedMsgId) deleteMessage(selectedMsgId);
     clearSelection();
   });
+  actionBarEditEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedMsgData && selectedMsgId) openEditModal(selectedMsgId, selectedMsgData.text || '', false);
+    clearSelection();
+  });
   actionBarReply.addEventListener('click', (e) => {
     e.stopPropagation();
     if (selectedMsgData && selectedMsgId) setReply(selectedMsgData, selectedMsgId);
@@ -1524,6 +1712,11 @@
     if (selectedDMMsgId) deleteDMMessage(selectedDMMsgId);
     clearDMSelection();
   });
+  dmActionBarEditEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedDMMsgData && selectedDMMsgId) openEditModal(selectedDMMsgId, selectedDMMsgData.text || '', true);
+    clearDMSelection();
+  });
   dmActionBarReplyEl.addEventListener('click', (e) => {
     e.stopPropagation();
     if (selectedDMMsgData && selectedDMMsgId) setDMReply(selectedDMMsgData, selectedDMMsgId);
@@ -1542,6 +1735,66 @@
     }
   });
   dmReplyCancelBtnEl.addEventListener('click', clearDMReply);
+
+  // ── Edit modal listeners ──────────────────────────────────
+  editSaveBtnEl.addEventListener('click', saveEdit);
+  editCancelBtnEl.addEventListener('click', () => {
+    editModalEl.classList.add('hidden');
+    editingMsgId = null;
+  });
+  editModalEl.addEventListener('click', (e) => { if (e.target === editModalEl) editModalEl.classList.add('hidden'); });
+  editInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
+    if (e.key === 'Escape') editModalEl.classList.add('hidden');
+  });
+
+  // ── Album listeners ───────────────────────────────────────
+  albumBtnEl.addEventListener('click', () => renderPhotoAlbum());
+  albumPanelCloseBtnEl.addEventListener('click', () => albumPanelEl.classList.add('hidden'));
+
+  // ── Search listeners ──────────────────────────────────────
+  searchBtnEl.addEventListener('click', () => {
+    searchBarEl.classList.toggle('hidden');
+    if (!searchBarEl.classList.contains('hidden')) searchInputEl.focus();
+    else { searchQuery = ''; searchInputEl.value = ''; if (lastMessagesSnapshot) renderMessages(lastMessagesSnapshot, lastMessagesUser); }
+  });
+  searchInputEl.addEventListener('input', () => {
+    searchQuery = searchInputEl.value.trim();
+    if (lastMessagesSnapshot) renderMessages(lastMessagesSnapshot, lastMessagesUser);
+  });
+  searchClearBtnEl.addEventListener('click', () => {
+    searchQuery = '';
+    searchInputEl.value = '';
+    searchBarEl.classList.add('hidden');
+    if (lastMessagesSnapshot) renderMessages(lastMessagesSnapshot, lastMessagesUser);
+  });
+
+  // ── Poll modal listeners ──────────────────────────────────
+  pollBtnEl.addEventListener('click', () => {
+    closeAllPickers();
+    pollOptionInputs.forEach((el) => { el.value = ''; });
+    pollQuestionInputEl.value = '';
+    pollStatusEl.textContent = '';
+    pollModalEl.classList.remove('hidden');
+    pollQuestionInputEl.focus();
+  });
+  pollCancelBtnEl.addEventListener('click', () => pollModalEl.classList.add('hidden'));
+  pollModalEl.addEventListener('click', (e) => { if (e.target === pollModalEl) pollModalEl.classList.add('hidden'); });
+  pollSendBtnEl.addEventListener('click', async () => {
+    const question = pollQuestionInputEl.value.trim();
+    if (!question) { pollStatusEl.textContent = 'Please enter a question.'; return; }
+    const options = pollOptionInputs.map((el) => el.value.trim()).filter(Boolean);
+    if (options.length < 2) { pollStatusEl.textContent = 'Please enter at least 2 options.'; return; }
+    pollSendBtnEl.disabled = true;
+    try {
+      await sendPoll(question, options);
+      pollModalEl.classList.add('hidden');
+    } catch (err) {
+      pollStatusEl.textContent = `Failed: ${err.message}`;
+    } finally {
+      pollSendBtnEl.disabled = false;
+    }
+  });
 
   // ── Read receipts (seenBy) ────────────────────────────
   function flushSeenUpdates() {
@@ -1974,7 +2227,9 @@
           ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
       } else {
-        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName);
+        const editedLabel = data.editedAt ? `<span class="msg__edited">(edited)</span>` : '';
+        const linkPreviewHtml = !data.editedAt ? buildLinkPreviewHtml(data.linkPreview) : '';
+        mediaContent = renderTextWithMentions(data.text || '', currentProfile.displayName) + editedLabel + linkPreviewHtml;
       }
 
       const replyBlock = data.replyTo && typeof data.replyTo === 'object' && typeof data.replyTo.text === 'string'
@@ -2013,6 +2268,13 @@
       }
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
         pill.addEventListener('click', () => toggleDMReaction(doc.id, pill.dataset.emoji, currentUser?.uid, pill.classList.contains('reaction-pill--mine')));
+      });
+      wrapper.querySelectorAll('.msg__poll__option').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const voted = btn.dataset.voted === 'true';
+          votePoll(btn.dataset.pollId, Number(btn.dataset.option), currentUser?.uid, voted, true);
+        });
       });
       dmMessagesEl.appendChild(wrapper);
     });
@@ -2827,6 +3089,8 @@
     currentUid = user.uid;
     usersBtnEl.classList.remove('hidden');
     chatsBtnEl.classList.remove('hidden');
+    albumBtnEl.classList.remove('hidden');
+    searchBtnEl.classList.remove('hidden');
 
     unsubscribeProfiles = db.collection('userProfiles').onSnapshot((snap) => {
       snap.docs.forEach((doc) => profilesCache.set(doc.id, doc.data()));

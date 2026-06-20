@@ -91,6 +91,21 @@
         <span>KidsChat</span>
       </div>
       <div class="chat-header__actions">
+        <button id="album-btn" class="btn-album hidden" title="Photo album" aria-label="Photo album">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </button>
+        <button id="search-btn" class="btn-search hidden" title="Search messages" aria-label="Search messages">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
         <button id="chats-btn" class="btn-chats hidden" title="Chats" aria-label="Chats">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="20" height="20">
@@ -118,6 +133,12 @@
       </div>
     </header>
 
+    <!-- Search bar -->
+    <div id="search-bar" class="search-bar hidden">
+      <input id="search-input" type="search" class="search-bar__input" placeholder="Search messages…" autocomplete="off" aria-label="Search messages">
+      <button id="search-clear-btn" type="button" class="search-bar__clear" aria-label="Clear search">✕</button>
+    </div>
+
     <!-- Message action bar – appears at top of chat when a message is selected -->
     <div id="msg-action-bar" class="msg-action-bar hidden">
       <button id="action-bar-close" class="action-bar__close" aria-label="Dismiss selection">✕</button>
@@ -125,6 +146,7 @@
       <div class="action-bar__btns">
         <button id="action-bar-delete" class="action-bar__btn action-bar__btn--delete hidden" aria-label="Delete">🗑️
           Delete</button>
+        <button id="action-bar-edit" class="action-bar__btn hidden" aria-label="Edit">✏️ Edit</button>
         <button id="action-bar-reply" class="action-bar__btn" aria-label="Reply">↩ Reply</button>
         <button id="action-bar-react" class="action-bar__btn" aria-label="React">😊 React</button>
       </div>
@@ -160,6 +182,7 @@
         </div>
       </div>
       <form id="message-form">
+        <button type="button" id="poll-btn" class="btn-composer-icon" aria-label="Create poll" title="Create poll">📊</button>
         <button type="button" id="media-picker-btn" class="btn-composer-icon" aria-label="Add emoji, GIF or sticker"
           title="Add emoji, GIF or sticker">😊</button>
         <textarea id="message-input" maxlength="500" placeholder="Message…" required autocomplete="off"
@@ -284,6 +307,7 @@
         <div class="action-bar__btns">
           <button id="dm-action-bar-delete" class="action-bar__btn action-bar__btn--delete hidden"
             aria-label="Delete">🗑️ Delete</button>
+          <button id="dm-action-bar-edit" class="action-bar__btn hidden" aria-label="Edit">✏️ Edit</button>
           <button id="dm-action-bar-reply" class="action-bar__btn" aria-label="Reply">↩ Reply</button>
           <button id="dm-action-bar-react" class="action-bar__btn" aria-label="React">😊 React</button>
         </div>
@@ -381,6 +405,17 @@
       </div>
     </div>
 
+    <!-- Photo album panel -->
+    <div id="album-panel" class="album-panel hidden" role="dialog" aria-label="Photo album">
+      <div class="album-panel__inner">
+        <div class="album-panel__header">
+          <h2 class="album-panel__title">Photos</h2>
+          <button id="album-panel-close-btn" type="button" class="album-panel__close" aria-label="Close">✕</button>
+        </div>
+        <div id="album-grid" class="album-grid"></div>
+      </div>
+    </div>
+
     <!-- Backdrop: closes the media picker when tapped outside it -->
     <div id="picker-backdrop" class="picker-backdrop hidden"></div>
 
@@ -412,6 +447,38 @@
     </div>
 
   </section>
+
+  <!-- Edit message modal -->
+  <div id="edit-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Edit message">
+    <div class="modal-card">
+      <h2 class="modal-title">Edit message</h2>
+      <textarea id="edit-input" class="edit-modal__textarea" maxlength="500" rows="4" placeholder="Message…"></textarea>
+      <p id="edit-status" class="edit-modal__status"></p>
+      <div class="modal-actions">
+        <button id="edit-cancel-btn" type="button" class="btn-modal-cancel">Cancel</button>
+        <button id="edit-save-btn" type="button" class="btn-modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Poll creation modal -->
+  <div id="poll-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Create poll">
+    <div class="modal-card">
+      <h2 class="modal-title">Create poll</h2>
+      <label class="profile-label" for="poll-question-input">Question</label>
+      <input id="poll-question-input" type="text" class="profile-name-input" maxlength="200" placeholder="Ask a question…" autocomplete="off">
+      <label class="profile-label">Options (2–4)</label>
+      <input id="poll-opt-1" type="text" class="profile-name-input poll-option-input" maxlength="80" placeholder="Option 1" autocomplete="off">
+      <input id="poll-opt-2" type="text" class="profile-name-input poll-option-input" maxlength="80" placeholder="Option 2" autocomplete="off">
+      <input id="poll-opt-3" type="text" class="profile-name-input poll-option-input" maxlength="80" placeholder="Option 3 (optional)" autocomplete="off">
+      <input id="poll-opt-4" type="text" class="profile-name-input poll-option-input" maxlength="80" placeholder="Option 4 (optional)" autocomplete="off">
+      <p id="poll-status" class="edit-modal__status"></p>
+      <div class="modal-actions">
+        <button id="poll-cancel-btn" type="button" class="btn-modal-cancel">Cancel</button>
+        <button id="poll-send-btn" type="button" class="btn-modal-save">Send poll</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Profile modal -->
   <div id="profile-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Edit profile">

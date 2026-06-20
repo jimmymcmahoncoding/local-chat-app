@@ -41,7 +41,7 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isAllowed();
       allow create: if isAllowed()
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'mentions'])
+          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'mentions', 'question', 'options', 'votes'])
         && request.resource.data.uid is string
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.displayName is string
@@ -106,6 +106,18 @@ service cloud.firestore {
             && request.resource.data.photoUrls.size() <= 10
             && request.resource.data.text == '[Photos]'
           )
+          ||
+          (
+            request.resource.data.type == 'poll'
+            && request.resource.data.question is string
+            && request.resource.data.question.size() > 0
+            && request.resource.data.question.size() <= 200
+            && request.resource.data.options is list
+            && request.resource.data.options.size() >= 2
+            && request.resource.data.options.size() <= 4
+            && request.resource.data.votes is map
+            && request.resource.data.text == '[Poll]'
+          )
         )
         && (!('mentions' in request.resource.data) || (
           request.resource.data.mentions is list
@@ -113,16 +125,30 @@ service cloud.firestore {
         ));
       allow delete: if isAllowed() && resource.data.uid == request.auth.uid;
       allow update: if isAllowed()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'seenBy'])
         && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reactions'])
-          || request.resource.data.reactions is map
-        )
-        && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenBy'])
-          || (
-            request.resource.data.seenBy is map
-            && request.resource.data.seenBy.diff(resource.data.get('seenBy', {})).affectedKeys().hasOnly([request.auth.uid])
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'seenBy', 'votes'])
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reactions'])
+              || request.resource.data.reactions is map
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenBy'])
+              || (
+                request.resource.data.seenBy is map
+                && request.resource.data.seenBy.diff(resource.data.get('seenBy', {})).affectedKeys().hasOnly([request.auth.uid])
+              )
+            )
+          )
+          ||
+          (
+            resource.data.uid == request.auth.uid
+            && resource.data.get('type', null) == null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 500
+            && request.resource.data.editedAt == request.time
           )
         );
     }
@@ -273,7 +299,19 @@ service cloud.firestore {
           );
         allow update: if isAllowed()
           && request.auth.uid in convParticipants()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
+          && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+            ||
+            (
+              resource.data.uid == request.auth.uid
+              && resource.data.get('type', null) == null
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 500
+              && request.resource.data.editedAt == request.time
+            )
+          );
         allow delete: if isAllowed()
           && resource.data.uid == request.auth.uid;
       }
