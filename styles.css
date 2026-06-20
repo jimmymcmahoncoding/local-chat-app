@@ -2787,20 +2787,17 @@ emoji-picker {
 /* ── Search / Album header buttons ──────────────────────────── */
 .btn-search,
 .btn-album {
-  position: relative;
   background: none;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  padding: 8px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--muted);
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
-  padding: 0;
 }
 
 .btn-search:hover,
