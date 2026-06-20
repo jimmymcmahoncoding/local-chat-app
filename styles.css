@@ -529,7 +529,8 @@ body {
 .picker-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 249; /* just below picker (250) */
+  z-index: 249;
+  /* just below picker (250) */
   background: transparent;
 }
 

@@ -193,30 +193,87 @@ service cloud.firestore {
       allow update: if isAllowed()
         && request.auth.uid in resource.data.participants
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessage'])
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 100;
 
       match /messages/{messageId} {
         function convParticipants() {
           return get(/databases/$(database)/documents/directMessages/$(conversationId)).data.participants;
         }
         allow read: if isAllowed()
-          && (
-            !exists(/databases/$(database)/documents/directMessages/$(conversationId))
-            || request.auth.uid in convParticipants()
-          );
+          && request.auth.uid in convParticipants();
         allow create: if isAllowed()
           && request.auth.uid in convParticipants()
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.createdAt == request.time
           && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'avatarUrl', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'replyTo'])
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 500
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 50
           && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
           && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024))
-          && (!('photoUrl' in request.resource.data) || (request.resource.data.photoUrl is string && request.resource.data.photoUrl.size() <= 1024));
+          && (!('replyTo' in request.resource.data) || (
+            request.resource.data.replyTo is map
+            && request.resource.data.replyTo.keys().hasOnly(['text', 'displayName', 'messageId'])
+            && request.resource.data.replyTo.text is string
+            && request.resource.data.replyTo.text.size() <= 500
+            && request.resource.data.replyTo.displayName is string
+            && request.resource.data.replyTo.displayName.size() <= 50
+            && (!('messageId' in request.resource.data.replyTo) || request.resource.data.replyTo.messageId is string)
+          ))
+          && (
+            (
+              !('type' in request.resource.data)
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 500
+            )
+            ||
+            (
+              request.resource.data.type == 'gif'
+              && request.resource.data.gifUrl is string
+              && request.resource.data.gifUrl.size() > 0
+              && request.resource.data.text == '[GIF]'
+            )
+            ||
+            (
+              request.resource.data.type == 'sticker'
+              && request.resource.data.sticker is string
+              && request.resource.data.sticker.size() > 0
+              && request.resource.data.sticker.size() <= 10
+              && request.resource.data.text == '[Sticker]'
+            )
+            ||
+            (
+              request.resource.data.type == 'voice'
+              && request.resource.data.audioUrl is string
+              && request.resource.data.audioUrl.size() > 0
+              && request.resource.data.audioUrl.size() <= 1024
+              && request.resource.data.duration is number
+              && request.resource.data.duration >= 0
+              && request.resource.data.duration <= 300
+              && request.resource.data.text == '[Voice message]'
+            )
+            ||
+            (
+              request.resource.data.type == 'photo'
+              && request.resource.data.photoUrl is string
+              && request.resource.data.photoUrl.size() > 0
+              && request.resource.data.photoUrl.size() <= 1024
+              && request.resource.data.text == '[Photo]'
+            )
+            ||
+            (
+              request.resource.data.type == 'photos'
+              && request.resource.data.photoUrls is list
+              && request.resource.data.photoUrls.size() > 0
+              && request.resource.data.photoUrls.size() <= 10
+              && request.resource.data.text == '[Photos]'
+            )
+          );
+        allow update: if isAllowed()
+          && request.auth.uid in convParticipants()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
         allow delete: if isAllowed()
           && resource.data.uid == request.auth.uid;
       }

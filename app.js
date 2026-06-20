@@ -311,16 +311,13 @@
     reactionPickerIsDM = false;
   }
 
-  async function toggleDMReaction(messageId, emoji, uid) {
+  async function toggleDMReaction(messageId, emoji, uid, alreadyReacted) {
     if (!cachedIsAllowed || !uid || !REACTION_EMOJIS.includes(emoji) || !currentDMConversationId) return;
     try {
       const ref = db.collection('directMessages').doc(currentDMConversationId)
         .collection('messages').doc(messageId);
-      const snap = await ref.get();
-      if (!snap.exists) return;
-      const uids = (snap.data().reactions?.[emoji]) || [];
       await ref.update({
-        [`reactions.${emoji}`]: uids.includes(uid)
+        [`reactions.${emoji}`]: alreadyReacted
           ? firebase.firestore.FieldValue.arrayRemove(uid)
           : firebase.firestore.FieldValue.arrayUnion(uid)
       });
@@ -470,15 +467,12 @@
     return `<div class="msg__reactions">${pills}</div>`;
   }
 
-  async function toggleReaction(messageId, emoji, uid) {
+  async function toggleReaction(messageId, emoji, uid, alreadyReacted) {
     if (!cachedIsAllowed || !uid || !REACTION_EMOJIS.includes(emoji)) return;
     try {
       const ref = db.collection('messages').doc(messageId);
-      const snap = await ref.get();
-      if (!snap.exists) return;
-      const uids = (snap.data().reactions?.[emoji]) || [];
       await ref.update({
-        [`reactions.${emoji}`]: uids.includes(uid)
+        [`reactions.${emoji}`]: alreadyReacted
           ? firebase.firestore.FieldValue.arrayRemove(uid)
           : firebase.firestore.FieldValue.arrayUnion(uid)
       });
@@ -611,7 +605,7 @@
         });
       }
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
-        pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
+        pill.addEventListener('click', () => toggleReaction(doc.id, pill.dataset.emoji, currentUser?.uid, pill.classList.contains('reaction-pill--mine')));
       });
 
       // Make sender name/avatar clickable to open DM
@@ -707,7 +701,7 @@
   async function addToPending(user) {
     if (!user?.email) return;
     const email = user.email.toLowerCase().trim();
-    const displayName = user.displayName || email.split('@')[0];
+    const displayName = (user.displayName || email.split('@')[0]).slice(0, 50);
     try {
       await db.collection('pendingUsers').doc(email).set({
         email,
@@ -1479,10 +1473,16 @@
   globalReactionPicker.querySelectorAll('.reaction-picker__btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (reactionPickerTargetId) {
+        const emoji = btn.dataset.emoji;
+        const uid = auth.currentUser?.uid;
         if (reactionPickerIsDM) {
-          toggleDMReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+          const msgEl = dmMessagesEl.querySelector(`[data-message-id="${CSS.escape(reactionPickerTargetId)}"]`);
+          const existingPill = msgEl?.querySelector(`.reaction-pill[data-emoji="${CSS.escape(emoji)}"]`);
+          toggleDMReaction(reactionPickerTargetId, emoji, uid, existingPill?.classList.contains('reaction-pill--mine') ?? false);
         } else {
-          toggleReaction(reactionPickerTargetId, btn.dataset.emoji, auth.currentUser?.uid);
+          const msgEl = messagesEl.querySelector(`[data-message-id="${CSS.escape(reactionPickerTargetId)}"]`);
+          const existingPill = msgEl?.querySelector(`.reaction-pill[data-emoji="${CSS.escape(emoji)}"]`);
+          toggleReaction(reactionPickerTargetId, emoji, uid, existingPill?.classList.contains('reaction-pill--mine') ?? false);
         }
       }
       clearSelection();
@@ -1657,8 +1657,13 @@
             // Count as unread if: initial load is done, the conversation was updated (new message),
             // and it's not the currently open DM conversation
             if (dmConversationsLoaded && change.type === 'modified' && change.doc.id !== currentDMConversationId) {
-              dmUnreadCounts.set(change.doc.id, (dmUnreadCounts.get(change.doc.id) || 0) + 1);
-              updateChatsBadge();
+              const prevTs = prev?.updatedAt;
+              const currTs = change.doc.data().updatedAt;
+              const isNewMessage = !prevTs || !currTs || !prevTs.isEqual?.(currTs);
+              if (isNewMessage) {
+                dmUnreadCounts.set(change.doc.id, (dmUnreadCounts.get(change.doc.id) || 0) + 1);
+                updateChatsBadge();
+              }
             }
           }
         });
@@ -2007,7 +2012,7 @@
         });
       }
       wrapper.querySelectorAll('.reaction-pill').forEach((pill) => {
-        pill.addEventListener('click', () => toggleDMReaction(doc.id, pill.dataset.emoji, currentUser?.uid));
+        pill.addEventListener('click', () => toggleDMReaction(doc.id, pill.dataset.emoji, currentUser?.uid, pill.classList.contains('reaction-pill--mine')));
       });
       dmMessagesEl.appendChild(wrapper);
     });
@@ -2455,7 +2460,8 @@
     } catch (err) {
       isRecordingForDM = false;
       const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
-      messageStatus.textContent = denied ? 'Microphone access denied.' : 'Could not access microphone.';
+      const micStatusEl = isDM ? dmMessageStatus : messageStatus;
+      micStatusEl.textContent = denied ? 'Microphone access denied.' : 'Could not access microphone.';
     }
   }
 
@@ -2479,22 +2485,22 @@
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const duration = Math.round((Date.now() - recordingStartTime) / 1000);
         const blob = new Blob(audioChunks, { type: mimeType });
+        const wasDM = isRecordingForDM; // capture before cleanupRecording resets it
         cleanupRecording();
-        if (blob.size > 0) await sendVoiceMessage(blob, duration, mimeType);
+        if (blob.size > 0) await sendVoiceMessage(blob, duration, mimeType, wasDM);
         resolve();
       }, { once: true });
       mediaRecorder.stop();
     });
   }
 
-  async function sendVoiceMessage(blob, duration, mimeType) {
+  async function sendVoiceMessage(blob, duration, mimeType, wasDM = false) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
     const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
     const fileName = `${Date.now()}.${ext}`;
     const storageRef = storage.ref(`voice-messages/${user.uid}/${fileName}`);
-    if (!isRecordingForDM) messageStatus.textContent = 'Sending…';
-    const wasDM = isRecordingForDM;
+    if (!wasDM) messageStatus.textContent = 'Sending…';
     try {
       const snapshot = await storageRef.put(blob, { contentType: mimeType });
       const audioUrl = await snapshot.ref.getDownloadURL();
@@ -2566,11 +2572,13 @@
             lastMessage: '',
           });
         }
+        if (dmReplyTo) photoData.replyTo = dmReplyTo;
         await convRef.collection('messages').add(photoData);
         await convRef.update({
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           lastMessage: '[Photo]',
         });
+        clearDMReply();
         dmMessageStatus.textContent = '';
       } else {
         if (replyTo) photoData.replyTo = replyTo;
