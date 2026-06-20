@@ -2784,6 +2784,31 @@ emoji-picker {
   object-fit: contain;
 }
 
+/* ── Search / Album header buttons ──────────────────────────── */
+.btn-search,
+.btn-album {
+  position: relative;
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.btn-search:hover,
+.btn-album:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--primary);
+}
+
 /* ── Search bar ──────────────────────────────────────────────── */
 .search-bar {
   display: flex;
