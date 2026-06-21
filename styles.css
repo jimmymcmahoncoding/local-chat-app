@@ -992,6 +992,14 @@ emoji-picker {
   .btn-signout {
     display: none;
   }
+
+  .user-name {
+    display: none;
+  }
+
+  .btn-profile {
+    flex: 0 0 auto;
+  }
 }
 
 @media (max-width: 400px) {
