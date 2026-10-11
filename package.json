@@ -1,14 +1,26 @@
 {
-    "name": "local-chat-app",
-    "version": "1.0.0",
-    "private": true,
-    "scripts": {
-        "test": "playwright test",
-        "test:headed": "playwright test --headed",
-        "test:ui": "playwright test --ui"
-    },
-    "devDependencies": {
-        "@playwright/test": "^1.48.0",
-        "dotenv": "^16.4.5"
-    }
+  "name": "local-chat-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "build": "node build.js",
+    "test:security": "node --test tests/security/unit/*.test.cjs",
+    "test:rules": "firebase emulators:exec --config firebase.test.json --project demo-kidschat-security --only firestore,storage \"node --test tests/security/rules.test.cjs\"",
+    "migrate:security": "node scripts/migrate-security.cjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.48.0",
+    "dotenv": "^16.4.5",
+    "firebase": "^12.19.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }

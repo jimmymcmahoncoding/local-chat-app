@@ -1,319 +1,222 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
     }
-
-    function userEmail() {
-      return request.auth.token.email.lower();
-    }
-
     function isAllowed() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/allowedUsers/$(userEmail()));
+      return verified() && exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.email == request.auth.token.email.lower();
     }
-
     function isAdmin() {
-      return isAllowed() &&
-        get(/databases/$(database)/documents/allowedUsers/$(userEmail())).data.isAdmin == true;
+      return isAllowed() && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.isAdmin == true;
+    }
+    function shortText(value, max) { return value is string && value.size() > 0 && value.size() <= max; }
+    function participant(conversationId) {
+      return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(conversationId)).data.participants;
+    }
+    function mediaPath(value, scope) {
+      return value is string && value.size() <= 1024
+        && value.matches('gs://[A-Za-z0-9.-]+/chat-media/' + scope + '/' + request.auth.uid + '/[A-Za-z0-9_.-]+');
+    }
+    function avatarPath(value) {
+      return value == '' || (value is string && value.size() <= 1024
+        && value.matches('gs://[A-Za-z0-9.-]+/avatars/' + request.auth.uid + '/[A-Za-z0-9_.-]+'));
+    }
+    function photoList(urls, scope) {
+      let pattern = 'gs://[A-Za-z0-9.-]{1,63}/chat-media/' + scope + '/' + request.auth.uid + '/[A-Za-z0-9_.-]{1,160}';
+      // One bounded regex for the list avoids exhausting the rules expression budget.
+      return urls is list && urls.size() > 0 && urls.size() <= 10 &&
+        (urls.size() <= 0 || urls[0] is string) &&
+        (urls.size() <= 1 || urls[1] is string) &&
+        (urls.size() <= 2 || urls[2] is string) &&
+        (urls.size() <= 3 || urls[3] is string) &&
+        (urls.size() <= 4 || urls[4] is string) &&
+        (urls.size() <= 5 || urls[5] is string) &&
+        (urls.size() <= 6 || urls[6] is string) &&
+        (urls.size() <= 7 || urls[7] is string) &&
+        (urls.size() <= 8 || urls[8] is string) &&
+        (urls.size() <= 9 || urls[9] is string) && urls.join(';').split(';').size() == urls.size() && urls.join(';').matches('(' + pattern + ')(;' + pattern + ')*');
+    }
+    function mentions(uids) {
+      return uids is list && uids.size() <= 20 &&
+        (uids.size() <= 0 || uids[0] is string) &&
+        (uids.size() <= 1 || uids[1] is string) &&
+        (uids.size() <= 2 || uids[2] is string) &&
+        (uids.size() <= 3 || uids[3] is string) &&
+        (uids.size() <= 4 || uids[4] is string) &&
+        (uids.size() <= 5 || uids[5] is string) &&
+        (uids.size() <= 6 || uids[6] is string) &&
+        (uids.size() <= 7 || uids[7] is string) &&
+        (uids.size() <= 8 || uids[8] is string) &&
+        (uids.size() <= 9 || uids[9] is string) &&
+        (uids.size() <= 10 || uids[10] is string) &&
+        (uids.size() <= 11 || uids[11] is string) &&
+        (uids.size() <= 12 || uids[12] is string) &&
+        (uids.size() <= 13 || uids[13] is string) &&
+        (uids.size() <= 14 || uids[14] is string) &&
+        (uids.size() <= 15 || uids[15] is string) &&
+        (uids.size() <= 16 || uids[16] is string) &&
+        (uids.size() <= 17 || uids[17] is string) &&
+        (uids.size() <= 18 || uids[18] is string) &&
+        (uids.size() <= 19 || uids[19] is string) && (uids.size() == 0 || (uids.join(',').split(',').size() == uids.size() && uids.join(',').matches('[A-Za-z0-9_-]{1,128}(,[A-Za-z0-9_-]{1,128})*')));
+    }
+    function optionsValid(options) {
+      return options is list && options.size() >= 2 && options.size() <= 4 && (options.size() <= 0 || shortText(options[0], 80)) && (options.size() <= 1 || shortText(options[1], 80)) && (options.size() <= 2 || shortText(options[2], 80)) && (options.size() <= 3 || shortText(options[3], 80));
+    }
+    function validMessage(scope, polls) {
+      let data = request.resource.data;
+      let type = data.get('type', 'text');
+      return data.keys().hasOnly(['text','uid','displayName','createdAt','type','avatar','avatarUrl','replyTo','mentions'].concat(contentKeys(type)))
+        && data.uid == request.auth.uid && shortText(data.displayName, 50)
+        && data.createdAt == request.time
+        && (!('avatar' in data) || (data.avatar is string && data.avatar.size() <= 10))
+        && (!('avatarUrl' in data) || avatarPath(data.avatarUrl))
+        && (!('mentions' in data) || mentions(data.mentions))
+        && (!('replyTo' in data) || (data.replyTo is map
+          && data.replyTo.keys().hasOnly(['text','displayName','messageId'])
+          && data.replyTo.text is string && data.replyTo.text.size() <= 500
+          && shortText(data.replyTo.displayName, 50)
+          && (!('messageId' in data.replyTo) || shortText(data.replyTo.messageId, 128))))
+        && contentValid(data,type,scope,polls);
+    }
+    function contentKeys(type) {
+      return type == 'gif' ? ['gifUrl'] : type == 'sticker' ? ['sticker'] : type == 'voice' ? ['audioUrl','duration']
+        : type == 'photo' ? ['photoUrl'] : type == 'photos' ? ['photoUrls'] : type == 'poll' ? ['question','options','votesByUser'] : [];
+    }
+    function contentValid(data,type,scope,polls) {
+      return type == 'text' ? shortText(data.text, 500)
+        : type == 'gif' ? data.text == '[GIF]' && data.gifUrl is string && data.gifUrl.size() <= 1024 && data.gifUrl.matches('https://media[0-9]*[.]giphy[.]com/[^\\s]+')
+        : type == 'sticker' ? data.text == '[Sticker]' && shortText(data.sticker, 10)
+        : type == 'voice' ? data.text == '[Voice message]' && mediaPath(data.audioUrl, scope) && data.duration is number && data.duration > 0 && data.duration <= 120
+        : type == 'photo' ? data.text == '[Photo]' && mediaPath(data.photoUrl, scope)
+        : type == 'photos' ? data.text == '[Photos]' && photoList(data.photoUrls, scope)
+        : type == 'poll' ? polls && data.text == '[Poll]' && shortText(data.question, 200) && optionsValid(data.options) && data.votesByUser is map && data.votesByUser.size() == 0
+        : false;
     }
 
-    match /allowedUsers/{email} {
-      allow read: if isAllowed();
-      allow write: if isAdmin();
+    function ownMap(field) {
+      let updated = request.resource.data.get(field, {});
+      return updated is map && updated.size() <= 200
+        && updated.diff(resource.data.get(field, {})).affectedKeys().hasOnly([request.auth.uid]);
     }
-
-    match /pendingUsers/{email} {
-      allow create: if signedIn()
-        && userEmail() == email
-        && !exists(/databases/$(database)/documents/allowedUsers/$(email))
-        && request.resource.data.keys().hasOnly(['email', 'displayName', 'requestedAt'])
-        && request.resource.data.email is string
-        && request.resource.data.email == email
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 50
-        && request.resource.data.requestedAt == request.time;
-      allow read, delete: if isAdmin();
+    function activityUpdate(polls) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let data = request.resource.data;
+      return changed.hasOnly(['reactionsByUser','seenBy','votesByUser'])
+        && (!changed.hasAny(['reactionsByUser']) || (ownMap('reactionsByUser')
+          && (!(request.auth.uid in data.reactionsByUser) || data.reactionsByUser[request.auth.uid] in ['👍','❤️','😂','😮','😢','🔥'])))
+        && (!changed.hasAny(['seenBy']) || (ownMap('seenBy')
+          && (!(request.auth.uid in data.seenBy) || data.seenBy[request.auth.uid] == true)))
+        && (!changed.hasAny(['votesByUser']) || (polls && resource.data.get('type', '') == 'poll' && ownMap('votesByUser')
+          && (!(request.auth.uid in data.votesByUser) || (data.votesByUser[request.auth.uid] is int
+            && data.votesByUser[request.auth.uid] >= 0 && data.votesByUser[request.auth.uid] < resource.data.options.size()))));
     }
-
+    function textEdit() {
+      return resource.data.uid == request.auth.uid && resource.data.get('type', 'text') == 'text'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','editedAt'])
+        && shortText(request.resource.data.text, 500) && request.resource.data.editedAt == request.time;
+    }
+    function sendBudget(path) {
+      return getAfter(/databases/$(database)/documents/sendLimits/$(request.auth.uid)).data.lastSent == request.time
+        && getAfter(/databases/$(database)/documents/sendLimits/$(request.auth.uid)).data.messagePath == path;
+    }
+    match /members/{uid} {
+      allow get: if verified() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      // Membership and roles are managed by authenticated admin callables only.
+      allow write: if false;
+    }
+    match /allowedUsers/{email} { allow read, write: if false; }
+    match /pendingUsers/{uid} {
+      allow get: if verified() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if verified() && request.auth.uid == uid && !isAllowed()
+        && request.resource.data.keys().hasOnly(['email','displayName','requestedAt'])
+        && request.resource.data.email == request.auth.token.email.lower()
+        && shortText(request.resource.data.displayName, 50) && request.resource.data.requestedAt == request.time
+        && !exists(/databases/$(database)/documents/rejectedUsers/$(uid));
+      allow update, delete: if false;
+    }
+    match /sendLimits/{uid} {
+      allow get: if isAllowed() && request.auth.uid == uid;
+      allow create: if isAllowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['lastSent','messagePath']) && request.resource.data.lastSent == request.time
+        && request.resource.data.messagePath is string && request.resource.data.messagePath.size() <= 400;
+      allow update: if isAllowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['lastSent','messagePath']) && request.resource.data.lastSent == request.time
+        && request.resource.data.messagePath is string && request.resource.data.messagePath.size() <= 400
+        && resource.data.lastSent <= request.time - duration.value(1, 's');
+    }
     match /messages/{messageId} {
       allow read: if isAllowed();
-      allow create: if isAllowed()
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'createdAt', 'type', 'gifUrl', 'sticker', 'avatar', 'avatarUrl', 'replyTo', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'mentions', 'question', 'options', 'votes'])
-        && request.resource.data.uid is string
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.displayName is string
-        && request.resource.data.createdAt == request.time
-        && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
-        && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024))
-        && (!('replyTo' in request.resource.data) || (
-          request.resource.data.replyTo is map
-          && request.resource.data.replyTo.keys().hasOnly(['text', 'displayName', 'messageId'])
-          && request.resource.data.replyTo.text is string
-          && request.resource.data.replyTo.text.size() <= 500
-          && request.resource.data.replyTo.displayName is string
-          && request.resource.data.replyTo.displayName.size() <= 50
-          && (!('messageId' in request.resource.data.replyTo) || request.resource.data.replyTo.messageId is string)
-        ))
-        && (
-          (
-            !('type' in request.resource.data)
-            && request.resource.data.text is string
-            && request.resource.data.text.size() > 0
-            && request.resource.data.text.size() <= 500
-          )
-          ||
-          (
-            request.resource.data.type == 'gif'
-            && request.resource.data.gifUrl is string
-            && request.resource.data.gifUrl.size() > 0
-            && request.resource.data.text == '[GIF]'
-          )
-          ||
-          (
-            request.resource.data.type == 'sticker'
-            && request.resource.data.sticker is string
-            && request.resource.data.sticker.size() > 0
-            && request.resource.data.sticker.size() <= 10
-            && request.resource.data.text == '[Sticker]'
-          )
-          ||
-          (
-            request.resource.data.type == 'voice'
-            && request.resource.data.audioUrl is string
-            && request.resource.data.audioUrl.size() > 0
-            && request.resource.data.audioUrl.size() <= 1024
-            && request.resource.data.duration is number
-            && request.resource.data.duration >= 0
-            && request.resource.data.duration <= 300
-            && request.resource.data.text == '[Voice message]'
-          )
-          ||
-          (
-            request.resource.data.type == 'photo'
-            && request.resource.data.photoUrl is string
-            && request.resource.data.photoUrl.size() > 0
-            && request.resource.data.photoUrl.size() <= 1024
-            && request.resource.data.text == '[Photo]'
-          )
-          ||
-          (
-            request.resource.data.type == 'photos'
-            && request.resource.data.photoUrls is list
-            && request.resource.data.photoUrls.size() > 0
-            && request.resource.data.photoUrls.size() <= 10
-            && request.resource.data.text == '[Photos]'
-          )
-          ||
-          (
-            request.resource.data.type == 'poll'
-            && request.resource.data.question is string
-            && request.resource.data.question.size() > 0
-            && request.resource.data.question.size() <= 200
-            && request.resource.data.options is list
-            && request.resource.data.options.size() >= 2
-            && request.resource.data.options.size() <= 4
-            && request.resource.data.votes is map
-            && request.resource.data.text == '[Poll]'
-          )
-        )
-        && (!('mentions' in request.resource.data) || (
-          request.resource.data.mentions is list
-          && request.resource.data.mentions.size() <= 20
-        ));
+      allow create: if isAllowed() && validMessage('group', true) && sendBudget('messages/' + messageId);
+      allow update: if isAllowed() && (activityUpdate(true) || textEdit());
       allow delete: if isAllowed() && resource.data.uid == request.auth.uid;
-      allow update: if isAllowed()
-        && (
-          (
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'seenBy', 'votes'])
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reactions'])
-              || request.resource.data.reactions is map
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenBy'])
-              || (
-                request.resource.data.seenBy is map
-                && request.resource.data.seenBy.diff(resource.data.get('seenBy', {})).affectedKeys().hasOnly([request.auth.uid])
-              )
-            )
-          )
-          ||
-          (
-            resource.data.uid == request.auth.uid
-            && resource.data.get('type', null) == null
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
-            && request.resource.data.text is string
-            && request.resource.data.text.size() > 0
-            && request.resource.data.text.size() <= 500
-            && request.resource.data.editedAt == request.time
-          )
-        );
     }
-
-    match /userProfiles/{userId} {
+    match /userProfiles/{uid} {
       allow read: if isAllowed();
-      allow write: if isAllowed()
-        && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['avatar', 'displayName', 'avatarUrl'])
-        && request.resource.data.avatar is string
-        && request.resource.data.avatar.size() <= 10
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 30
-        && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024));
+      allow create, update: if isAllowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['avatar','displayName','avatarUrl'])
+        && request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10
+        && shortText(request.resource.data.displayName, 30)
+        && (!('avatarUrl' in request.resource.data) || avatarPath(request.resource.data.avatarUrl));
+      allow delete: if isAllowed() && request.auth.uid == uid;
     }
-
-    match /fcmTokens/{userId} {
+    match /fcmTokens/{uid} {
       allow read: if false;
-      allow write: if isAllowed()
-        && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['token', 'updatedAt'])
-        && request.resource.data.token is string
-        && request.resource.data.token.size() > 0
-        && request.resource.data.token.size() <= 4096
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isAllowed() && request.auth.uid == userId;
+      allow create, update: if isAllowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['token','updatedAt'])
+        && shortText(request.resource.data.token, 4096) && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
-
-    match /presence/{userId} {
+    match /presence/{uid} {
       allow read: if isAllowed();
-      allow write: if isAllowed()
-        && request.auth.uid == userId
-        && request.resource.data.online is bool
-        && request.resource.data.lastSeen == request.time
-        && request.resource.data.keys().hasOnly(['online', 'lastSeen', 'displayName', 'avatar'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() <= 30
-        && request.resource.data.avatar is string
-        && request.resource.data.avatar.size() <= 10;
+      allow create, update: if isAllowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['online','lastSeen','displayName','avatar'])
+        && request.resource.data.online is bool && request.resource.data.lastSeen == request.time
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 30
+        && request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10;
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
-
-    match /typingIndicators/{userId} {
+    function typingValid(uid) {
+      return request.auth.uid == uid && request.resource.data.keys().hasOnly(['isTyping','displayName','updatedAt'])
+        && request.resource.data.isTyping is bool && request.resource.data.updatedAt == request.time
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 30;
+    }
+    match /typingIndicators/{uid} {
       allow read: if isAllowed();
-      allow write: if isAllowed()
-        && request.auth.uid == userId
-        && request.resource.data.isTyping is bool
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.roomId is string
-        && request.resource.data.roomId.size() <= 200
-        && request.resource.data.keys().hasOnly(['isTyping', 'displayName', 'roomId', 'updatedAt'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() <= 30;
-      allow delete: if isAllowed() && request.auth.uid == userId;
+      allow create, update: if isAllowed() && typingValid(uid);
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
-
     match /directMessages/{conversationId} {
-      allow read: if isAllowed()
-        && (resource == null || request.auth.uid in resource.data.participants);
+      allow get: if isAllowed() && (resource == null || request.auth.uid in resource.data.participants);
+      allow list: if isAllowed() && request.auth.uid in resource.data.participants;
       allow create: if isAllowed()
-        && request.resource.data.keys().hasOnly(['participants', 'updatedAt', 'lastMessage'])
-        && request.resource.data.participants is list
-        && request.resource.data.participants.size() == 2
+        && request.resource.data.keys().hasOnly(['participants','updatedAt','lastMessage'])
+        && request.resource.data.participants is list && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] is string && request.resource.data.participants[1] is string
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
         && request.auth.uid in request.resource.data.participants
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastMessage is string
+        && get(/databases/$(database)/documents/members/$(request.resource.data.participants[0])).data.active == true
+        && get(/databases/$(database)/documents/members/$(request.resource.data.participants[1])).data.active == true
+        && conversationId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1]
+        && request.resource.data.updatedAt == request.time && request.resource.data.lastMessage == '';
+      allow update: if participant(conversationId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt','lastMessage'])
+        && request.resource.data.updatedAt == request.time && request.resource.data.lastMessage is string
         && request.resource.data.lastMessage.size() <= 100;
-      allow update: if isAllowed()
-        && request.auth.uid in resource.data.participants
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessage'])
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastMessage is string
-        && request.resource.data.lastMessage.size() <= 100;
-
       match /messages/{messageId} {
-        function convParticipants() {
-          return get(/databases/$(database)/documents/directMessages/$(conversationId)).data.participants;
-        }
-        allow read: if isAllowed()
-          && request.auth.uid in convParticipants();
-        allow create: if isAllowed()
-          && request.auth.uid in convParticipants()
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.createdAt == request.time
-          && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'avatar', 'avatarUrl', 'createdAt', 'type', 'gifUrl', 'sticker', 'audioUrl', 'duration', 'photoUrl', 'photoUrls', 'replyTo'])
-          && request.resource.data.displayName is string
-          && request.resource.data.displayName.size() <= 50
-          && (!('avatar' in request.resource.data) || (request.resource.data.avatar is string && request.resource.data.avatar.size() <= 10))
-          && (!('avatarUrl' in request.resource.data) || (request.resource.data.avatarUrl is string && request.resource.data.avatarUrl.size() <= 1024))
-          && (!('replyTo' in request.resource.data) || (
-            request.resource.data.replyTo is map
-            && request.resource.data.replyTo.keys().hasOnly(['text', 'displayName', 'messageId'])
-            && request.resource.data.replyTo.text is string
-            && request.resource.data.replyTo.text.size() <= 500
-            && request.resource.data.replyTo.displayName is string
-            && request.resource.data.replyTo.displayName.size() <= 50
-            && (!('messageId' in request.resource.data.replyTo) || request.resource.data.replyTo.messageId is string)
-          ))
-          && (
-            (
-              !('type' in request.resource.data)
-              && request.resource.data.text is string
-              && request.resource.data.text.size() > 0
-              && request.resource.data.text.size() <= 500
-            )
-            ||
-            (
-              request.resource.data.type == 'gif'
-              && request.resource.data.gifUrl is string
-              && request.resource.data.gifUrl.size() > 0
-              && request.resource.data.text == '[GIF]'
-            )
-            ||
-            (
-              request.resource.data.type == 'sticker'
-              && request.resource.data.sticker is string
-              && request.resource.data.sticker.size() > 0
-              && request.resource.data.sticker.size() <= 10
-              && request.resource.data.text == '[Sticker]'
-            )
-            ||
-            (
-              request.resource.data.type == 'voice'
-              && request.resource.data.audioUrl is string
-              && request.resource.data.audioUrl.size() > 0
-              && request.resource.data.audioUrl.size() <= 1024
-              && request.resource.data.duration is number
-              && request.resource.data.duration >= 0
-              && request.resource.data.duration <= 300
-              && request.resource.data.text == '[Voice message]'
-            )
-            ||
-            (
-              request.resource.data.type == 'photo'
-              && request.resource.data.photoUrl is string
-              && request.resource.data.photoUrl.size() > 0
-              && request.resource.data.photoUrl.size() <= 1024
-              && request.resource.data.text == '[Photo]'
-            )
-            ||
-            (
-              request.resource.data.type == 'photos'
-              && request.resource.data.photoUrls is list
-              && request.resource.data.photoUrls.size() > 0
-              && request.resource.data.photoUrls.size() <= 10
-              && request.resource.data.text == '[Photos]'
-            )
-          );
-        allow update: if isAllowed()
-          && request.auth.uid in convParticipants()
-          && (
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-            ||
-            (
-              resource.data.uid == request.auth.uid
-              && resource.data.get('type', null) == null
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
-              && request.resource.data.text is string
-              && request.resource.data.text.size() > 0
-              && request.resource.data.text.size() <= 500
-              && request.resource.data.editedAt == request.time
-            )
-          );
-        allow delete: if isAllowed()
-          && resource.data.uid == request.auth.uid;
+        allow read: if participant(conversationId);
+        allow create: if participant(conversationId) && validMessage('direct/' + conversationId, false) && sendBudget('directMessages/' + conversationId + '/messages/' + messageId);
+        allow update: if participant(conversationId) && (activityUpdate(false) || textEdit());
+        allow delete: if participant(conversationId) && resource.data.uid == request.auth.uid;
+      }
+      match /typingIndicators/{uid} {
+        allow read: if participant(conversationId);
+        allow create, update: if participant(conversationId) && typingValid(uid);
+        allow delete: if participant(conversationId) && request.auth.uid == uid;
       }
     }
   }

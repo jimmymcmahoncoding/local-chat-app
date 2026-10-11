@@ -7,7 +7,7 @@ globalThis.FAMILY_CHAT_CONFIG = {
     messagingSenderId: 'REPLACE_ME',
     appId: 'REPLACE_ME'
   },
-  allowedFamilyEmails: ['replace@example.com'],
+  appCheckSiteKey: '', // reCAPTCHA Enterprise site key registered in Firebase App Check
   vapidPublicKey: '', // Optional: required only for web push notifications
   giphyApiKey: '' // Get a free key at https://developers.giphy.com
 };

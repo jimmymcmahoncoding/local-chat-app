@@ -7,15 +7,84 @@
 
   firebase.initializeApp(FAMILY_CHAT_CONFIG.firebaseConfig);
 
+  if (FAMILY_CHAT_CONFIG.appCheckSiteKey) {
+    firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(FAMILY_CHAT_CONFIG.appCheckSiteKey), true);
+  }
+
   const auth = firebase.auth();
   const db = firebase.firestore();
   const storage = firebase.storage();
+  const functions = firebase.functions();
+  const emulatorMode = FAMILY_CHAT_CONFIG.emulators === true && ['localhost','127.0.0.1'].includes(location.hostname) && FAMILY_CHAT_CONFIG.firebaseConfig.projectId.startsWith('demo-');
+  if (emulatorMode) {
+    auth.useEmulator('http://127.0.0.1:9099');
+    db.useEmulator('127.0.0.1',8080);
+    storage.useEmulator('127.0.0.1',9199);
+    functions.useEmulator('127.0.0.1',5001);
+  }
+  const protectedMedia = createProtectedMedia({
+    bucket: FAMILY_CHAT_CONFIG.firebaseConfig.storageBucket,
+    endpoint: emulatorMode ? 'http://127.0.0.1:9199' : undefined,
+    getUser: () => auth.currentUser,
+    getAppCheckToken: async () => FAMILY_CHAT_CONFIG.appCheckSiteKey ? (await firebase.appCheck().getToken()).token : null,
+  });
+  let unsubscribeAccess = null;
+  let unsubscribeMembers = null;
+  let authGeneration = 0;
+
+  async function writeMessage(collection, data) {
+    const user = auth.currentUser;
+    if (!user?.emailVerified || !cachedIsAllowed) throw new Error('Family approval required.');
+    const batch = db.batch();
+    const ref = collection.doc();
+    batch.set(ref, data);
+    batch.set(db.collection('sendLimits').doc(user.uid), {lastSent: firebase.firestore.FieldValue.serverTimestamp(), messagePath: ref.path});
+    await batch.commit();
+    return ref;
+  }
+
+  function sendContext(user, isDM) {
+    if (!user || (isDM && !currentDMConversationId)) throw new Error('Choose a conversation first.');
+    return {uid:user.uid, generation:authGeneration, conversation:isDM ? currentDMConversationId : null};
+  }
+  function checkSendContext(context) {
+    if (authGeneration !== context.generation || auth.currentUser?.uid !== context.uid || !cachedIsAllowed || (context.conversation && currentDMConversationId !== context.conversation)) throw new Error('Account or conversation changed. Please send again.');
+  }
+
+  async function mediaRef(user, fileName, isDM, context = sendContext(user, isDM)) {
+    checkSendContext(context);
+    if (isDM) {
+      const id = context.conversation;
+      const partner = currentDMPartnerUid;
+      if (!id || !partner) throw new Error('Choose a conversation first.');
+      const conv = db.collection('directMessages').doc(id);
+      if (!(await conv.get()).exists) await conv.set({participants:[user.uid,partner].sort(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), lastMessage:''});
+      checkSendContext(context);
+      return storage.ref(`chat-media/direct/${id}/${user.uid}/${fileName}`);
+    }
+    return storage.ref(`chat-media/group/${user.uid}/${fileName}`);
+  }
+
+  async function prepareImage(file) {
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error('Choose a JPEG, PNG or WebP under 10 MB.');
+    const bitmap = await createImageBitmap(file);
+    try {
+      if (bitmap.width * bitmap.height > 40000000) throw new Error('Image dimensions are too large.');
+      const ratio = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      return await new Promise((resolve,reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not process image.')), 'image/webp', 0.9));
+    } finally { bitmap.close(); }
+  }
   let messaging = null;
   if ('serviceWorker' in navigator && 'PushManager' in window) {
     try { messaging = firebase.messaging(); } catch { /* FCM not supported */ }
   }
   const provider = new firebase.auth.GoogleAuthProvider();
   const microsoftProvider = new firebase.auth.OAuthProvider('microsoft.com');
+  microsoftProvider.setCustomParameters({prompt: 'select_account'});
   const notificationsSupported = 'Notification' in window;
 
   const signInBtn = document.getElementById('sign-in-btn');
@@ -214,6 +283,8 @@
   let editingMsgId = null;
   let editingIsDM = false;
   let isRecordingForDM = false;
+  let recordingContext = null;
+  let recordingStartPending = false;
 
   let mediaRecorder = null;
   let audioChunks = [];
@@ -352,9 +423,7 @@
       const ref = db.collection('directMessages').doc(currentDMConversationId)
         .collection('messages').doc(messageId);
       await ref.update({
-        [`reactions.${emoji}`]: alreadyReacted
-          ? firebase.firestore.FieldValue.arrayRemove(uid)
-          : firebase.firestore.FieldValue.arrayUnion(uid)
+        [`reactionsByUser.${uid}`]: alreadyReacted ? firebase.firestore.FieldValue.delete() : emoji
       });
     } catch (err) {
       console.error('DM reaction failed:', err);
@@ -470,7 +539,7 @@
 
   function renderAvatarHtml(avatar, avatarUrl, displayName) {
     if (avatarUrl && isValidStorageUrl(avatarUrl)) {
-      return `<div class="msg__avatar msg__avatar--photo" aria-hidden="true"><img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy"></div>`;
+      return `<div class="msg__avatar msg__avatar--photo" aria-hidden="true"><img data-media="${escapeHtml(avatarUrl)}" alt="" loading="lazy"></div>`;
     }
     if (avatar && AVATAR_OPTIONS.includes(avatar)) {
       return `<div class="msg__avatar msg__avatar--emoji" aria-hidden="true">${escapeHtml(avatar)}</div>`;
@@ -486,39 +555,24 @@
   }
 
   function buildPollHtml(data, docId, isDM) {
-    const votes = data.votes || {};
-    const options = Array.isArray(data.options) ? data.options : [];
-    const totalVotes = options.reduce((sum, _, i) => sum + (votes[i]?.length || 0), 0);
+    const {options, counts, total} = ChatSecurity.pollCounts(data);
+    const uid = lastMessagesUser?.uid || '';
     const optionsHtml = options.map((opt, i) => {
-      const count = votes[i]?.length || 0;
-      const pct = totalVotes ? Math.round((count / totalVotes) * 100) : 0;
-      const voted = Array.isArray(votes[i]) && votes[i].includes(lastMessagesUser?.uid || '');
+      const count = counts[i];
+      const pct = total ? Math.round(count / total * 100) : 0;
+      const voted = data.votesByUser?.[uid] === i;
       return `<button class="msg__poll__option${voted ? ' msg__poll__option--voted' : ''}" data-poll-id="${escapeHtml(docId)}" data-option="${i}" data-voted="${voted}" data-is-dm="${isDM}" type="button">
         <div class="msg__poll__option__bar" style="width:${pct}%"></div>
         <div class="msg__poll__option__label"><span>${escapeHtml(opt)}</span><span class="msg__poll__option__pct">${count ? `${pct}%` : ''}</span></div>
       </button>`;
     }).join('');
-    return `<div class="msg__poll">
-      <div class="msg__poll__question">${escapeHtml(data.question || '')}</div>
-      <div class="msg__poll__options">${optionsHtml}</div>
-      <div class="msg__poll__footer">${totalVotes} vote${totalVotes !== 1 ? 's' : ''}</div>
-    </div>`;
+    return `<div class="msg__poll"><div class="msg__poll__question">${escapeHtml(typeof data.question === 'string' ? data.question : '')}</div><div class="msg__poll__options">${optionsHtml}</div><div class="msg__poll__footer">${total} vote${total !== 1 ? 's' : ''}</div></div>`;
   }
 
   function buildLinkPreviewHtml(preview) {
-    if (!preview || !preview.title) return '';
-    const safe = (s) => escapeHtml(String(s || ''));
-    const imgHtml = preview.image
-      ? `<img class="msg__link-preview__img" src="${safe(preview.image)}" alt="" loading="lazy" onerror="this.style.display='none'">`
-      : '';
-    return `<a class="msg__link-preview" href="${safe(preview.url)}" target="_blank" rel="noopener noreferrer">
-      ${imgHtml}
-      <div class="msg__link-preview__body">
-        <div class="msg__link-preview__site">${safe(preview.siteName)}</div>
-        <div class="msg__link-preview__title">${safe(preview.title)}</div>
-        ${preview.description ? `<div class="msg__link-preview__desc">${safe(preview.description)}</div>` : ''}
-      </div>
-    </a>`;
+    if (!preview || typeof preview.title !== 'string' || !ChatSecurity.httpsUrl(preview.url)) return '';
+    // External preview images would contact a third party merely by opening a DM.
+    return `<a class="msg__link-preview" href="${escapeHtml(preview.url)}" target="_blank" rel="noopener noreferrer"><div class="msg__link-preview__body"><div class="msg__link-preview__site">${escapeHtml(String(preview.siteName || '').slice(0,50))}</div><div class="msg__link-preview__title">${escapeHtml(preview.title.slice(0,100))}</div><div class="msg__link-preview__desc">${escapeHtml(String(preview.description || '').slice(0,200))}</div></div></a>`;
   }
 
   function buildReactionsBar(reactions, currentUid) {
@@ -543,9 +597,7 @@
     try {
       const ref = db.collection('messages').doc(messageId);
       await ref.update({
-        [`reactions.${emoji}`]: alreadyReacted
-          ? firebase.firestore.FieldValue.arrayRemove(uid)
-          : firebase.firestore.FieldValue.arrayUnion(uid)
+        [`reactionsByUser.${uid}`]: alreadyReacted ? firebase.firestore.FieldValue.delete() : emoji
       });
     } catch (err) {
       console.error('Reaction failed:', err);
@@ -587,17 +639,17 @@
         const safeAudioUrl = isValidStorageUrl(data.audioUrl || '') ? data.audioUrl : '';
         const dur = typeof data.duration === 'number' ? formatDuration(data.duration) : '';
         mediaContent = safeAudioUrl
-          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeAudioUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
+          ? `<div class="msg__voice"><audio class="msg__audio" data-media="${escapeHtml(safeAudioUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
           : `<div class="msg__text">[Voice message]</div>`;
       } else if (data.type === 'photo') {
         const safePhotoUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
         mediaContent = safePhotoUrl
-          ? `<a href="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="eager"></a>`
+          ? `<a data-media="${escapeHtml(safePhotoUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" data-media="${escapeHtml(safePhotoUrl)}" alt="Photo" loading="eager"></a>`
           : '<div class="msg__text">[Photo]</div>';
       } else if (data.type === 'photos') {
-        const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
+        const safeUrls = (Array.isArray(data.photoUrls) ? data.photoUrls : []).filter(u => isValidStorageUrl(u));
         mediaContent = safeUrls.length
-          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a data-media="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" data-media="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
       } else if (data.type === 'poll') {
         mediaContent = buildPollHtml(data, doc.id, false);
@@ -614,7 +666,7 @@
           </div>`
         : '';
 
-      const reactionsHtml = buildReactionsBar(data.reactions, currentUser?.uid);
+      const reactionsHtml = buildReactionsBar(ChatSecurity.reactions(data), currentUser?.uid);
 
       // Build seenBy avatars row (own messages only)
       let seenHtml = '';
@@ -628,7 +680,7 @@
             const avUrl = profile?.avatarUrl;
             const name = escapeHtml(String(profile?.displayName || '').slice(0, 30));
             if (avUrl && isValidStorageUrl(avUrl)) {
-              return `<span class="msg__seen-avatar msg__seen-avatar--photo" title="${name}"><img src="${escapeHtml(avUrl)}" alt="" loading="lazy"></span>`;
+              return `<span class="msg__seen-avatar msg__seen-avatar--photo" title="${name}"><img data-media="${escapeHtml(avUrl)}" alt="" loading="lazy"></span>`;
             }
             if (av && AVATAR_OPTIONS.includes(av)) {
               return `<span class="msg__seen-avatar msg__seen-avatar--emoji" title="${name}">${escapeHtml(av)}</span>`;
@@ -783,7 +835,7 @@
         return;
       }
       albumGridEl.innerHTML = items.map(({ url }) =>
-        `<div class="album-grid__item"><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(url)}" alt="Photo" loading="lazy"></a></div>`
+        `<div class="album-grid__item"><a data-media="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><img data-media="${escapeHtml(url)}" alt="Photo" loading="lazy"></a></div>`
       ).join('');
     } catch (err) {
       albumGridEl.innerHTML = `<p class="album-grid__empty">Failed to load: ${escapeHtml(err.message)}</p>`;
@@ -794,11 +846,11 @@
   async function sendPoll(question, options) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
-    await db.collection('messages').add({
+    await writeMessage(db.collection('messages'), {
       type: 'poll',
       question,
       options,
-      votes: {},
+      votesByUser: {},
       text: '[Poll]',
       uid: user.uid,
       displayName: currentProfile.displayName || user.displayName || user.email || 'Family',
@@ -815,9 +867,7 @@
         ? db.collection('directMessages').doc(currentDMConversationId).collection('messages').doc(messageId)
         : db.collection('messages').doc(messageId);
       await ref.update({
-        [`votes.${optionIndex}`]: alreadyVoted
-          ? firebase.firestore.FieldValue.arrayRemove(uid)
-          : firebase.firestore.FieldValue.arrayUnion(uid),
+        [`votesByUser.${uid}`]: alreadyVoted ? firebase.firestore.FieldValue.delete() : optionIndex,
       });
     } catch (err) {
       console.error('Poll vote failed:', err);
@@ -843,12 +893,7 @@
   }
 
   function isValidGiphyUrl(url) {
-    try {
-      const u = new URL(url);
-      return /^media\d*\.giphy\.com$/.test(u.hostname);
-    } catch {
-      return false;
-    }
+    return ChatSecurity.httpsUrl(url) && /^media[0-9]*\.giphy\.com$/.test(new URL(url).hostname);
   }
 
   function showUI(screen) {
@@ -870,36 +915,23 @@
   }
 
   async function checkAllowedStatus(user) {
-    if (!user?.email) return { allowed: false, isAdmin: false };
-    const email = user.email.toLowerCase().trim();
-    try {
-      const snap = await db.collection('allowedUsers').doc(email).get();
-      if (!snap.exists) return { allowed: false, isAdmin: false };
-      return { allowed: true, isAdmin: snap.data().isAdmin === true };
-    } catch {
-      return { allowed: false, isAdmin: false };
-    }
+    if (!user?.emailVerified) return {allowed:false,isAdmin:false};
+    const snap = await db.collection('members').doc(user.uid).get();
+    const member = snap.data();
+    return {allowed: member?.active === true && member.email === user.email.toLowerCase(), isAdmin: member?.active === true && member.isAdmin === true};
   }
 
   async function addToPending(user) {
-    if (!user?.email) return;
-    const email = user.email.toLowerCase().trim();
-    const displayName = (user.displayName || email.split('@')[0]).slice(0, 50);
-    try {
-      await db.collection('pendingUsers').doc(email).set({
-        email,
-        displayName,
-        requestedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-    } catch (err) {
-      console.warn('Failed to add pending request:', err);
-    }
+    if (!user?.emailVerified) return;
+    const pending = db.collection('pendingUsers').doc(user.uid);
+    if ((await pending.get()).exists) return;
+    await pending.set({email:user.email.toLowerCase(), displayName:(user.displayName || user.email.split('@')[0]).slice(0,50), requestedAt:firebase.firestore.FieldValue.serverTimestamp()});
   }
 
   function registerNotificationSW() {
     if (!('serviceWorker' in navigator)) return Promise.resolve();
     return navigator.serviceWorker
-      .register('./notification-sw.js')
+      .register('./firebase-messaging-sw.js')
       .then((reg) => {
         swRegistration = reg;
       })
@@ -926,7 +958,6 @@
     if (!notificationsSupported) {
       pushStatus.textContent = 'Notifications are not supported in this browser.';
       pushEnableBtn.classList.add('hidden');
-      pushResetBtn.classList.add('hidden');
       pushSection.classList.remove('hidden');
       return;
     }
@@ -945,7 +976,7 @@
   }
 
   function notifyForNewMessages(snapshot, signedInUser) {
-    if (Notification.permission !== 'granted') return;
+    if (!notificationsSupported || Notification.permission !== 'granted') return;
     if (!sessionStart) return;
 
     snapshot
@@ -974,18 +1005,18 @@
             : String(message.text || '').trim() || 'New message received';
         const isMentioned = Array.isArray(message.mentions) && message.mentions.includes(signedInUser.uid);
         const title = isMentioned ? `${sender} mentioned you!` : `${sender} sent a message`;
-        showNotification(title, body);
+        showNotification('KidsChat', 'New family message');
       });
   }
 
   async function handleSignIn(authProvider) {
+    authStatus.textContent = '';
     try {
-      if (notificationsSupported && Notification.permission === 'default') {
-        await Notification.requestPermission().catch(() => { });
-      }
       await auth.signInWithPopup(authProvider);
     } catch (error) {
-      authStatus.textContent = `Sign-in failed: ${error.message}`;
+      authStatus.textContent = error.code === 'auth/account-exists-with-different-credential'
+        ? ChatSecurity.accountConflictMessage(error.customData?.email, authProvider.providerId)
+        : `Sign-in failed: ${error.message}`;
     }
   }
 
@@ -1024,7 +1055,7 @@
       if (replyTo) messageData.replyTo = replyTo;
       const mentionedUids = extractMentionedUids(text);
       if (mentionedUids.length) messageData.mentions = mentionedUids;
-      await db.collection('messages').add(messageData);
+      await writeMessage(db.collection('messages'), messageData);
       input.value = '';
       input.style.height = 'auto';
       updateVoiceBtnVisibility();
@@ -1058,6 +1089,7 @@
   async function loadProfile(uid) {
     try {
       const snap = await db.collection('userProfiles').doc(uid).get();
+      if (auth.currentUser?.uid !== uid) return;
       if (snap.exists) {
         const data = snap.data();
         currentProfile.avatar = AVATAR_OPTIONS.includes(data.avatar) ? data.avatar : '😀';
@@ -1086,7 +1118,7 @@
   function syncProfileUI() {
     if (userAvatarEl) {
       if (currentProfile.avatarUrl && isValidStorageUrl(currentProfile.avatarUrl)) {
-        userAvatarEl.innerHTML = `<img src="${escapeHtml(currentProfile.avatarUrl)}" alt="" class="user-avatar__img">`;
+        userAvatarEl.innerHTML = `<img data-media="${escapeHtml(currentProfile.avatarUrl)}" alt="" class="user-avatar__img">`;
       } else {
         userAvatarEl.innerHTML = '';
         userAvatarEl.textContent = currentProfile.avatar;
@@ -1100,7 +1132,7 @@
     pendingAvatarFile = null;
     pendingAvatarClear = false;
     if (currentProfile.avatarUrl && isValidStorageUrl(currentProfile.avatarUrl)) {
-      avatarPreviewEl.innerHTML = `<img src="${escapeHtml(currentProfile.avatarUrl)}" alt="Profile photo" class="avatar-preview__img">`;
+      avatarPreviewEl.innerHTML = `<img data-media="${escapeHtml(currentProfile.avatarUrl)}" alt="Profile photo" class="avatar-preview__img">`;
     } else {
       avatarPreviewEl.innerHTML = '';
       avatarPreviewEl.textContent = currentProfile.avatar;
@@ -1121,6 +1153,7 @@
   async function saveProfile() {
     const user = auth.currentUser;
     if (!user) return;
+    const context = sendContext(user, false);
     const name = profileNameInput.value.trim();
     if (!name) { profileNameInput.focus(); return; }
     let newAvatarUrl = currentProfile.avatarUrl;
@@ -1129,17 +1162,20 @@
     try {
       if (pendingAvatarFile) {
         const ext = (pendingAvatarFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const storageRef = storage.ref(`avatars/${user.uid}/avatar.${ext || 'jpg'}`);
-        const snapshot = await storageRef.put(pendingAvatarFile, { contentType: pendingAvatarFile.type });
-        newAvatarUrl = await snapshot.ref.getDownloadURL();
+        const storageRef = storage.ref(`avatars/${user.uid}/${crypto.randomUUID()}.webp`);
+        const processedAvatar = await prepareImage(pendingAvatarFile);
+        const snapshot = await storageRef.put(processedAvatar, { contentType: 'image/webp', customMetadata: { client: 'kidschat' } });
+        newAvatarUrl = snapshot.ref.toString();
       } else if (pendingAvatarClear) {
         newAvatarUrl = '';
       }
+      checkSendContext(context);
       await db.collection('userProfiles').doc(user.uid).set({
         avatar: profileSelectedAvatar,
         avatarUrl: newAvatarUrl,
         displayName: name,
       });
+      checkSendContext(context);
       currentProfile.avatar = profileSelectedAvatar;
       currentProfile.avatarUrl = newAvatarUrl;
       currentProfile.displayName = name;
@@ -1261,7 +1297,7 @@
     if (activeComposerContext === 'dm') {
       const fields = { type: 'sticker', sticker, text: '[Sticker]' };
       if (dmReplyTo) fields.replyTo = dmReplyTo;
-      await sendDMMedia(fields);
+      try { await sendDMMedia(fields); } catch { return; }
       clearDMReply();
       return;
     }
@@ -1277,7 +1313,7 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) stickerData.replyTo = replyTo;
-      await db.collection('messages').add(stickerData);
+      await writeMessage(db.collection('messages'), stickerData);
       messageStatus.textContent = '';
       clearReply();
     } catch (error) {
@@ -1394,7 +1430,7 @@
     if (activeComposerContext === 'dm') {
       const fields = { type: 'gif', gifUrl, text: '[GIF]' };
       if (dmReplyTo) fields.replyTo = dmReplyTo;
-      await sendDMMedia(fields);
+      try { await sendDMMedia(fields); } catch { return; }
       clearDMReply();
       return;
     }
@@ -1410,7 +1446,7 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (replyTo) gifData.replyTo = replyTo;
-      await db.collection('messages').add(gifData);
+      await writeMessage(db.collection('messages'), gifData);
       messageStatus.textContent = '';
       clearReply();
     } catch (error) {
@@ -1566,6 +1602,7 @@
         if (password.length < 6) { authStatus.textContent = 'Password must be at least 6 characters.'; emailSubmitBtn.disabled = false; return; }
         const cred = await auth.createUserWithEmailAndPassword(email, password);
         await cred.user.updateProfile({ displayName: name });
+        await cred.user.sendEmailVerification();
       } else {
         await auth.signInWithEmailAndPassword(email, password);
       }
@@ -1611,12 +1648,12 @@
       const approveBtn = document.createElement('button');
       approveBtn.className = 'btn-approve';
       approveBtn.textContent = 'Approve';
-      approveBtn.addEventListener('click', () => approveUser(data.email, card));
+      approveBtn.addEventListener('click', () => approveUser(doc.id, card));
 
       const rejectBtn = document.createElement('button');
       rejectBtn.className = 'btn-reject';
       rejectBtn.textContent = 'Reject';
-      rejectBtn.addEventListener('click', () => rejectUser(data.email, card));
+      rejectBtn.addEventListener('click', () => rejectUser(doc.id, card));
 
       actionsEl.appendChild(approveBtn);
       actionsEl.appendChild(rejectBtn);
@@ -1627,24 +1664,69 @@
     });
   }
 
-  async function approveUser(email, card) {
+  function renderMembers(docs, ownUid) {
+    const list = document.getElementById('admin-members-list');
+    list.replaceChildren();
+    docs.filter(doc => doc.data().active === true).forEach(doc => {
+      const card = document.createElement('div');
+      card.className = 'pending-user-card';
+      const email = document.createElement('div');
+      email.className = 'pending-user-card__email';
+      email.textContent = `${doc.data().email}${doc.id === ownUid ? ' (you)' : ''}`;
+      card.appendChild(email);
+      if (doc.id !== ownUid) {
+        const button = document.createElement('button');
+        button.className = 'btn-reject'; button.type = 'button'; button.textContent = 'Remove access';
+        button.addEventListener('click', () => {
+          button.classList.add('hidden');
+          const confirmation = document.createElement('div');
+          const explanation = document.createElement('p');
+          explanation.textContent = `Remove family access for ${doc.data().email}? They will need approval to rejoin.`;
+          const actions = document.createElement('div');
+          actions.className = 'pending-user-card__actions';
+          const cancel = document.createElement('button');
+          cancel.type = 'button'; cancel.className = 'btn-modal-cancel'; cancel.textContent = 'Cancel';
+          const remove = document.createElement('button');
+          remove.type = 'button'; remove.className = 'btn-reject'; remove.textContent = 'Confirm remove access';
+          const status = document.createElement('p');
+          status.setAttribute('role', 'status');
+          cancel.addEventListener('click', () => {
+            confirmation.remove(); button.classList.remove('hidden'); button.focus();
+          });
+          remove.addEventListener('click', async () => {
+            cancel.disabled = true; remove.disabled = true; status.textContent = 'Removing access…';
+            try { await functions.httpsCallable('revokeMember')({uid:doc.id}); }
+            catch {
+              cancel.disabled = false; remove.disabled = false;
+              status.textContent = 'Could not remove access. Please try again.';
+            }
+          });
+          actions.append(cancel, remove); confirmation.append(explanation, actions, status);
+          card.appendChild(confirmation); cancel.focus();
+        });
+        card.appendChild(button);
+      }
+      list.appendChild(card);
+    });
+  }
+
+  async function approveUser(uid, card) {
     card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     try {
-      await db.collection('allowedUsers').doc(email).set({ isAdmin: false });
-      await db.collection('pendingUsers').doc(email).delete();
+      await functions.httpsCallable('approveMember')({uid});
     } catch (err) {
       card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
-      console.error('Approve failed:', err);
+      card.appendChild(Object.assign(document.createElement('p'),{textContent:'Approval failed. Please try again.'}));
     }
   }
 
-  async function rejectUser(email, card) {
+  async function rejectUser(uid, card) {
     card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     try {
-      await db.collection('pendingUsers').doc(email).delete();
+      await functions.httpsCallable('rejectMember')({uid});
     } catch (err) {
       card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
-      console.error('Reject failed:', err);
+      card.appendChild(Object.assign(document.createElement('p'),{textContent:'Rejection failed. Please try again.'}));
     }
   }
 
@@ -1904,6 +1986,7 @@
     unsubscribeDMConversations = db.collection('directMessages')
       .where('participants', 'array-contains', uid)
       .onSnapshot((snap) => {
+        if (auth.currentUser?.uid !== uid || !cachedIsAllowed) return;
         snap.docChanges().forEach((change) => {
           if (change.type === 'removed') {
             dmConversationsCache.delete(change.doc.id);
@@ -1932,18 +2015,21 @@
   }
 
   // ── Typing indicators ──────────────────────────────────
+  function typingRef(uid, roomId) {
+    return roomId === 'main' ? db.collection('typingIndicators').doc(uid) : db.collection('directMessages').doc(roomId).collection('typingIndicators').doc(uid);
+  }
+
   async function setTypingStatus(uid, isTyping, roomId) {
     if (!uid || !roomId) return;
     try {
       if (isTyping) {
-        await db.collection('typingIndicators').doc(uid).set({
+        await typingRef(uid, roomId).set({
           isTyping: true,
           displayName: currentProfile.displayName || '',
-          roomId,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
       } else {
-        await db.collection('typingIndicators').doc(uid).delete();
+        await typingRef(uid, roomId).delete();
       }
     } catch { /* ignore */ }
   }
@@ -1973,8 +2059,8 @@
   function subscribeMainTyping(uid) {
     if (unsubscribeTyping) unsubscribeTyping();
     unsubscribeTyping = db.collection('typingIndicators')
-      .where('roomId', '==', 'main')
       .onSnapshot((snap) => {
+        if (auth.currentUser?.uid !== uid || !cachedIsAllowed) return;
         const names = snap.docs
           .filter((doc) => doc.id !== uid)
           .filter((doc) => doc.data().isTyping === true)
@@ -1998,9 +2084,9 @@
   function subscribeDMTyping(conversationId, uid) {
     if (unsubscribeDMTyping) { unsubscribeDMTyping(); unsubscribeDMTyping = null; }
     if (!conversationId) return;
-    unsubscribeDMTyping = db.collection('typingIndicators')
-      .where('roomId', '==', conversationId)
+    unsubscribeDMTyping = db.collection('directMessages').doc(conversationId).collection('typingIndicators')
       .onSnapshot((snap) => {
+        if (auth.currentUser?.uid !== uid || !cachedIsAllowed || currentDMConversationId !== conversationId) return;
         const isTyping = snap.docs.some((doc) => {
           if (doc.id === uid) return false;
           return doc.data().isTyping === true;
@@ -2174,7 +2260,7 @@
     if (dmUserAvatarEl) {
       const dmAvUrl = profile.avatarUrl;
       if (dmAvUrl && isValidStorageUrl(dmAvUrl)) {
-        dmUserAvatarEl.innerHTML = `<img src="${escapeHtml(dmAvUrl)}" alt="" class="user-avatar__img">`;
+        dmUserAvatarEl.innerHTML = `<img data-media="${escapeHtml(dmAvUrl)}" alt="" class="user-avatar__img">`;
       } else {
         dmUserAvatarEl.innerHTML = '';
         dmUserAvatarEl.textContent = (avatar && AVATAR_OPTIONS.includes(avatar)) ? avatar : '\ud83d\udc64';
@@ -2218,17 +2304,17 @@
         const safeUrl = isValidStorageUrl(data.audioUrl || '') ? data.audioUrl : '';
         const dur = typeof data.duration === 'number' ? formatDuration(data.duration) : '';
         mediaContent = safeUrl
-          ? `<div class="msg__voice"><audio class="msg__audio" src="${escapeHtml(safeUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
+          ? `<div class="msg__voice"><audio class="msg__audio" data-media="${escapeHtml(safeUrl)}" controls preload="none" aria-label="Voice message"></audio>${dur ? `<span class="msg__voice-duration">${escapeHtml(dur)}</span>` : ''}</div>`
           : '<div class="msg__text">[Voice message]</div>';
       } else if (data.type === 'photo') {
         const safeUrl = isValidStorageUrl(data.photoUrl || '') ? data.photoUrl : '';
         mediaContent = safeUrl
-          ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(safeUrl)}" alt="Photo" loading="eager"></a>`
+          ? `<a data-media="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" data-media="${escapeHtml(safeUrl)}" alt="Photo" loading="eager"></a>`
           : '<div class="msg__text">[Photo]</div>';
       } else if (data.type === 'photos') {
-        const safeUrls = (data.photoUrls || []).filter(u => isValidStorageUrl(u));
+        const safeUrls = (Array.isArray(data.photoUrls) ? data.photoUrls : []).filter(u => isValidStorageUrl(u));
         mediaContent = safeUrls.length
-          ? `<div class="msg__photos">${safeUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" src="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
+          ? `<div class="msg__photos">${safeUrls.map(u => `<a data-media="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer"><img class="msg__photo" data-media="${escapeHtml(u)}" alt="Photo" loading="eager"></a>`).join('')}</div>`
           : '<div class="msg__text">[Photos]</div>';
       } else {
         const editedLabel = data.editedAt ? `<span class="msg__edited">(edited)</span>` : '';
@@ -2243,7 +2329,7 @@
           </div>`
         : '';
 
-      const reactionsHtml = buildReactionsBar(data.reactions, currentUser?.uid);
+      const reactionsHtml = buildReactionsBar(ChatSecurity.reactions(data), currentUser?.uid);
 
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${isOwn ? 'msg--own' : 'msg--other'}`;
@@ -2291,14 +2377,16 @@
     unsubscribeDMMessages = db
       .collection('directMessages').doc(conversationId)
       .collection('messages').orderBy('createdAt', 'asc').limitToLast(100)
-      .onSnapshot((snap) => renderDMMessages(snap, user));
+      .onSnapshot((snap) => { if (auth.currentUser?.uid === user.uid && cachedIsAllowed && currentDMConversationId === conversationId) renderDMMessages(snap, user); });
   }
 
   async function sendDMMessage(text) {
     const user = auth.currentUser;
     if (!text || !user || !cachedIsAllowed || !currentDMConversationId || !currentDMPartnerUid) return;
+    const context = sendContext(user, true);
     try {
-      const convRef = db.collection('directMessages').doc(currentDMConversationId);
+      checkSendContext(context);
+      const convRef = db.collection('directMessages').doc(context.conversation);
       const convSnap = await convRef.get();
       if (!convSnap.exists) {
         await convRef.set({
@@ -2307,6 +2395,7 @@
           lastMessage: '',
         });
       }
+      checkSendContext(context);
       const dmMsgData = {
         text,
         uid: user.uid,
@@ -2316,7 +2405,7 @@
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       };
       if (dmReplyTo) dmMsgData.replyTo = dmReplyTo;
-      await convRef.collection('messages').add(dmMsgData);
+      await writeMessage(convRef.collection('messages'), dmMsgData);
       await convRef.update({
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         lastMessage: text.slice(0, 100),
@@ -2324,15 +2413,17 @@
       clearDMReply();
       clearTypingStatus(user.uid);
     } catch (err) {
-      console.error('DM send failed:', err);
+      dmMessageStatus.textContent = `Message failed: ${err.message}`;
     }
   }
 
-  async function sendDMMedia(fields) {
+  async function sendDMMedia(fields, context) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed || !currentDMConversationId || !currentDMPartnerUid) return;
+    context = context || sendContext(user, true);
     try {
-      const convRef = db.collection('directMessages').doc(currentDMConversationId);
+      checkSendContext(context);
+      const convRef = db.collection('directMessages').doc(context.conversation);
       const convSnap = await convRef.get();
       if (!convSnap.exists) {
         await convRef.set({
@@ -2341,7 +2432,8 @@
           lastMessage: '',
         });
       }
-      await convRef.collection('messages').add({
+      checkSendContext(context);
+      await writeMessage(convRef.collection('messages'), {
         ...fields,
         uid: user.uid,
         displayName: currentProfile.displayName || user.displayName || user.email || 'User',
@@ -2354,25 +2446,41 @@
         lastMessage: String(fields.text || '').slice(0, 100),
       });
     } catch (err) {
-      console.error('DM media send failed:', err);
+      dmMessageStatus.textContent = `Message failed: ${err.message}`;
+      throw err;
     }
   }
 
-  function openDM(partnerUid) {
+  async function openDM(partnerUid) {
     const user = auth.currentUser;
     if (!user || partnerUid === user.uid || !cachedIsAllowed) return;
+    closeDMPanel();
     currentDMPartnerUid = partnerUid;
     currentDMConversationId = getConversationId(user.uid, partnerUid);
-    // Clear unread for this conversation
+    const context = sendContext(user, true);
     dmUnreadCounts.set(currentDMConversationId, 0);
     updateChatsBadge();
     usersPanelEl.classList.add('hidden');
     updateDMHeader();
-    subscribeDMMessages(currentDMConversationId, user);
-    subscribeDMTyping(currentDMConversationId, user.uid);
     dmPanelEl.classList.remove('hidden');
-    updateDMVoiceBtnVisibility();
-    dmInputEl?.focus();
+    dmMessagesEl.textContent = 'Loading…';
+    dmMessageStatus.textContent = '';
+    try {
+      // Create the participant-bound parent before opening protected child listeners.
+      const conv = db.collection('directMessages').doc(context.conversation);
+      await db.runTransaction(async transaction => {
+        const snap = await transaction.get(conv);
+        checkSendContext(context);
+        if (!snap.exists) transaction.set(conv,{participants:[user.uid,partnerUid].sort(),updatedAt:firebase.firestore.FieldValue.serverTimestamp(),lastMessage:''});
+      });
+      checkSendContext(context);
+      subscribeDMMessages(context.conversation, user);
+      subscribeDMTyping(context.conversation, user.uid);
+      updateDMVoiceBtnVisibility();
+      dmInputEl?.focus();
+    } catch {
+      if (currentDMConversationId === context.conversation) dmMessageStatus.textContent = 'Could not open this conversation. Please try again.';
+    }
   }
 
   function closeDMPanel() {
@@ -2383,6 +2491,8 @@
     currentDMConversationId = null;
     dmPanelEl.classList.add('hidden');
     if (dmMessagesEl) dmMessagesEl.innerHTML = '';
+    dmInputEl.value = '';
+    clearPhotoPreview(true);
     clearDMSelection();
     clearDMReply();
     if (isRecordingForDM && mediaRecorder && mediaRecorder.state !== 'inactive') cancelRecording();
@@ -2587,7 +2697,7 @@
 
   // ── FCM push notifications ────────────────────────────
   async function setupFCM(uid) {
-    if (!('serviceWorker' in navigator)) return;
+    if (!notificationsSupported || !('serviceWorker' in navigator)) return;
     try {
       const swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
       swRegistration = swReg;
@@ -2598,7 +2708,7 @@
     }
     const vapidKey = (FAMILY_CHAT_CONFIG.vapidPublicKey || '').trim();
     if (!vapidKey || !messaging) return;
-    if (Notification.permission !== 'granted') return;
+    if (!notificationsSupported || Notification.permission !== 'granted') return;
     try {
       // Force a fresh push subscription by unsubscribing at the browser level.
       // This ensures any stale subscription (e.g. from a previous VAPID key) is cleared.
@@ -2632,7 +2742,7 @@
     messaging.onMessage((payload) => {
       const title = payload.notification?.title || 'Family';
       const body = payload.notification?.body || 'New message';
-      console.log('Foreground FCM message received:', { title, body });
+      // Message bodies are intentionally kept out of console logs.
     });
   }
 
@@ -2657,12 +2767,7 @@
   }
 
   function isValidStorageUrl(url) {
-    try {
-      const u = new URL(url);
-      return u.hostname === 'firebasestorage.googleapis.com';
-    } catch {
-      return false;
-    }
+    return !!ChatSecurity.mediaLocation(url, FAMILY_CHAT_CONFIG.firebaseConfig.storageBucket);
   }
 
   function updateVoiceBtnVisibility() {
@@ -2700,11 +2805,15 @@
   }
 
   async function startRecording(isDM = false) {
-    if (!cachedIsAllowed || !voiceSupported) return;
+    if (!cachedIsAllowed || !voiceSupported || recordingStartPending || (mediaRecorder && mediaRecorder.state !== 'inactive')) return;
+    recordingStartPending = true;
     try {
       closeAllPickers();
       isRecordingForDM = isDM;
+      const context = sendContext(auth.currentUser, isDM);
       recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      checkSendContext(context);
+      recordingContext = context;
       const mimeType = getSupportedMimeType();
       const options = mimeType ? { mimeType } : {};
       mediaRecorder = new MediaRecorder(recordingStream, options);
@@ -2724,17 +2833,18 @@
         if (elapsed >= MAX_RECORDING_SECONDS) stopAndSendRecording();
       }, 500);
     } catch (err) {
-      isRecordingForDM = false;
+      cleanupRecording();
       const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
       const micStatusEl = isDM ? dmMessageStatus : messageStatus;
       micStatusEl.textContent = denied ? 'Microphone access denied.' : 'Could not access microphone.';
-    }
+    } finally { recordingStartPending = false; }
   }
 
   function cleanupRecording() {
     if (recordingTimerInterval) { clearInterval(recordingTimerInterval); recordingTimerInterval = null; }
     if (recordingStream) { recordingStream.getTracks().forEach((t) => t.stop()); recordingStream = null; }
     mediaRecorder = null;
+    recordingContext = null;
     audioChunks = [];
     hideRecordingUI();
   }
@@ -2751,29 +2861,32 @@
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const duration = Math.round((Date.now() - recordingStartTime) / 1000);
         const blob = new Blob(audioChunks, { type: mimeType });
+        const context = recordingContext;
         const wasDM = isRecordingForDM; // capture before cleanupRecording resets it
         cleanupRecording();
-        if (blob.size > 0) await sendVoiceMessage(blob, duration, mimeType, wasDM);
+        if (blob.size > 0) await sendVoiceMessage(blob, Math.max(1,duration), mimeType, wasDM, context);
         resolve();
       }, { once: true });
       mediaRecorder.stop();
     });
   }
 
-  async function sendVoiceMessage(blob, duration, mimeType, wasDM = false) {
+  async function sendVoiceMessage(blob, duration, mimeType, wasDM = false, recordedContext) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
+    const context = recordedContext || sendContext(user, wasDM);
     const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-    const fileName = `${Date.now()}.${ext}`;
-    const storageRef = storage.ref(`voice-messages/${user.uid}/${fileName}`);
+    const fileName = `${crypto.randomUUID()}.${ext}`;
     if (!wasDM) messageStatus.textContent = 'Sending…';
     try {
-      const snapshot = await storageRef.put(blob, { contentType: mimeType });
-      const audioUrl = await snapshot.ref.getDownloadURL();
+      const storageRef = await mediaRef(user, fileName, wasDM, context);
+      const snapshot = await storageRef.put(blob, { contentType: mimeType, customMetadata: { client: 'kidschat' } });
+      checkSendContext(context);
+      const audioUrl = snapshot.ref.toString();
       if (wasDM) {
         const fields = { type: 'voice', audioUrl, duration, text: '[Voice message]' };
         if (dmReplyTo) fields.replyTo = dmReplyTo;
-        await sendDMMedia(fields);
+        await sendDMMedia(fields, context);
         clearDMReply();
       } else {
         const voiceData = {
@@ -2788,19 +2901,20 @@
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         };
         if (replyTo) voiceData.replyTo = replyTo;
-        await db.collection('messages').add(voiceData);
+        await writeMessage(db.collection('messages'), voiceData);
         messageStatus.textContent = '';
         clearReply();
       }
     } catch (err) {
       if (!wasDM) messageStatus.textContent = `Voice message failed: ${err.message}`;
-      else console.error('DM voice message failed:', err);
+      else dmMessageStatus.textContent = `Voice message failed: ${err.message}`;
     }
   }
 
   async function sendPhotoMessage(file, isDM = false) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
+    const context = sendContext(user, isDM);
     if (!file.type.startsWith('image/')) {
       messageStatus.textContent = 'Please select an image file.';
       return;
@@ -2811,12 +2925,14 @@
     }
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
     const fileName = `${Date.now()}.${ext || 'jpg'}`;
-    const storageRef = storage.ref(`photos/${user.uid}/${fileName}`);
     const statusEl = isDM ? dmMessageStatus : messageStatus;
     statusEl.textContent = 'Uploading photo…';
     try {
-      const snapshot = await storageRef.put(file, { contentType: file.type || 'image/jpeg' });
-      const photoUrl = await snapshot.ref.getDownloadURL();
+      const storageRef = await mediaRef(user, `${crypto.randomUUID()}.webp`, isDM, context);
+      const image = await prepareImage(file);
+      const snapshot = await storageRef.put(image, { contentType: 'image/webp', customMetadata: { client: 'kidschat' } });
+      checkSendContext(context);
+      const photoUrl = snapshot.ref.toString();
       const photoData = {
         type: 'photo',
         photoUrl,
@@ -2839,7 +2955,7 @@
           });
         }
         if (dmReplyTo) photoData.replyTo = dmReplyTo;
-        await convRef.collection('messages').add(photoData);
+        await writeMessage(convRef.collection('messages'), photoData);
         await convRef.update({
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
           lastMessage: '[Photo]',
@@ -2848,7 +2964,7 @@
         dmMessageStatus.textContent = '';
       } else {
         if (replyTo) photoData.replyTo = replyTo;
-        await db.collection('messages').add(photoData);
+        await writeMessage(db.collection('messages'), photoData);
         clearReply();
         messageStatus.textContent = '';
       }
@@ -2868,6 +2984,7 @@
   // ── Photo multi-select preview ───────────────────────────
   function showPhotoPreview(files, isDM) {
     const pending = isDM ? dmPendingPhotos : pendingPhotos;
+    if (pending.length + files.length > 10) { (isDM ? dmMessageStatus : messageStatus).textContent = 'Send up to 10 photos at a time.'; return; }
     Array.from(files).forEach(f => pending.push({ file: f, url: URL.createObjectURL(f) }));
     renderPhotoPreview(isDM);
   }
@@ -2927,7 +3044,9 @@
   async function sendPhotosBulk(files, isDM) {
     const user = auth.currentUser;
     if (!user || !cachedIsAllowed) return;
-    const valid = files.filter(f => f.type.startsWith('image/') && f.size <= 10 * 1024 * 1024);
+    const context = sendContext(user, isDM);
+    if (files.length > 10) throw new Error('Send up to 10 photos at a time.');
+    const valid = files.filter(f => ['image/jpeg','image/png','image/webp'].includes(f.type) && f.size <= 10 * 1024 * 1024);
     if (!valid.length) return;
     const statusEl = isDM ? dmMessageStatus : messageStatus;
     statusEl.textContent = `Uploading ${valid.length === 1 ? 'photo' : `${valid.length} photos`}…`;
@@ -2936,21 +3055,26 @@
       const uploads = valid.map((file) => {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'jpg'}`;
-        const ref = storage.ref(`photos/${user.uid}/${fileName}`);
-        return ref.put(file, { contentType: file.type || 'image/jpeg' }).then(snap => {
+        return (async () => {
+          const image = await prepareImage(file);
+          checkSendContext(context);
+          const ref = await mediaRef(user, `${crypto.randomUUID()}.webp`, isDM, context);
+          return ref.put(image, {contentType:'image/webp',customMetadata:{client:'kidschat'}});
+        })().then(snap => {
           uploaded++;
           if (valid.length > 1) statusEl.textContent = `Uploading… ${uploaded}/${valid.length}`;
-          return snap.ref.getDownloadURL();
+          return snap.ref.toString();
         });
       });
       const photoUrls = await Promise.all(uploads);
+      checkSendContext(context);
       const isSingle = photoUrls.length === 1;
       const fields = isSingle
         ? { type: 'photo', photoUrl: photoUrls[0], text: '[Photo]' }
         : { type: 'photos', photoUrls, text: '[Photos]' };
       if (isDM) {
         if (dmReplyTo) fields.replyTo = dmReplyTo;
-        await sendDMMedia(fields);
+        await sendDMMedia(fields, context);
         clearDMReply();
         dmMessageStatus.textContent = '';
       } else {
@@ -2963,7 +3087,7 @@
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         };
         if (replyTo) msgData.replyTo = replyTo;
-        await db.collection('messages').add(msgData);
+        await writeMessage(db.collection('messages'), msgData);
         clearReply();
         messageStatus.textContent = '';
       }
@@ -3033,7 +3157,10 @@
   });
 
   // ── Auth state ────────────────────────────────────────
-  auth.onAuthStateChanged(async (user) => {
+  async function handleAuthState(user) {
+    const generation = ++authGeneration;
+    if (unsubscribeAccess) { unsubscribeAccess(); unsubscribeAccess = null; }
+    if (unsubscribeMembers) { unsubscribeMembers(); unsubscribeMembers = null; }
     if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
     if (unsubscribePending) { unsubscribePending(); unsubscribePending = null; }
     if (unsubscribeProfiles) { unsubscribeProfiles(); unsubscribeProfiles = null; }
@@ -3063,6 +3190,20 @@
     adminBtn.classList.add('hidden');
     adminPanel.classList.add('hidden');
 
+    protectedMedia.clear();
+    messagesEl.replaceChildren();
+    lastMessagesSnapshot = null; lastMessagesUser = null;
+    input.value = ''; dmInputEl.value = '';
+    emailPasswordInput.value = '';
+    clearPhotoPreview(false); clearPhotoPreview(true);
+    clearReply(); clearSelection();
+    profileModal.classList.add('hidden'); editModalEl.classList.add('hidden'); pollModalEl.classList.add('hidden'); albumPanelEl.classList.add('hidden');
+    albumGridEl.replaceChildren();
+    adminPanelList.replaceChildren(); document.getElementById('admin-members-list').replaceChildren();
+    typingIndicatorEl.textContent = ''; dmTypingEl.textContent = '';
+    pendingAvatarFile = null; pendingAvatarClear = false;
+    currentProfile = {avatar:'😀',avatarUrl:'',displayName:''};
+    syncProfileUI();
     if (!user) {
       authStatus.textContent = '';
       sessionStart = null;
@@ -3070,13 +3211,47 @@
       return;
     }
 
-    const { allowed, isAdmin } = await checkAllowedStatus(user);
+    if (!user.emailVerified) {
+      showUI('pending');
+      pendingEmailDisplay.textContent = user.email || '';
+      document.getElementById('pending-title').textContent = 'Verify your email';
+      document.getElementById('pending-hint').textContent = 'Verify your email address before requesting family access.';
+      document.getElementById('verification-resend-btn').classList.remove('hidden');
+      return;
+    }
+    document.getElementById('verification-resend-btn').classList.add('hidden');
+    document.getElementById('pending-title').textContent = 'Awaiting approval';
+    document.getElementById('pending-hint').textContent = 'Your verified account must be approved by a family admin.';
+    let status;
+    try { status = await checkAllowedStatus(user); }
+    catch {
+      if (generation !== authGeneration) return;
+      pendingEmailDisplay.textContent = user.email || '';
+      document.getElementById('pending-title').textContent = 'Access check unavailable';
+      document.getElementById('pending-hint').textContent = 'Could not check family access. Please use Check access to retry.';
+      showUI('pending');
+      return;
+    }
+    if (generation !== authGeneration) return;
+    const {allowed,isAdmin} = status;
     cachedIsAllowed = allowed;
     cachedIsAdmin = isAdmin;
+    unsubscribeAccess = db.collection('members').doc(user.uid).onSnapshot(async snap => {
+      if (generation !== authGeneration) return;
+      const member = snap.data();
+      if (allowed && (member?.active !== true || member.email !== user.email.toLowerCase())) {
+        await auth.signOut();
+        authStatus.textContent = 'Your family access has been removed.';
+      } else if (allowed && member.isAdmin !== cachedIsAdmin) {
+        // Reinitialize listeners when roles change; do not keep an old admin panel.
+        await handleAuthState(auth.currentUser);
+      } else if (!allowed && member?.active === true) await handleAuthState(auth.currentUser);
+    }, async () => { if (generation === authGeneration && allowed) await auth.signOut(); });
 
     if (!allowed) {
       // Add to pending if not already there
-      await addToPending(user);
+      try { await addToPending(user); } catch { document.getElementById('pending-hint').textContent = 'Could not submit this request. Contact your family admin or try checking again.'; }
+      if (generation !== authGeneration) return;
       pendingEmailDisplay.textContent = user.email || '';
       showUI('pending');
       return;
@@ -3097,6 +3272,7 @@
     searchBtnEl.classList.remove('hidden');
 
     unsubscribeProfiles = db.collection('userProfiles').onSnapshot((snap) => {
+      if (generation !== authGeneration) return;
       snap.docs.forEach((doc) => profilesCache.set(doc.id, doc.data()));
       // Start presence after profiles load so displayName is set
       if (!presenceHeartbeatInterval) startPresence(user.uid);
@@ -3108,8 +3284,10 @@
 
     if (isAdmin) {
       adminBtn.classList.remove('hidden');
+      unsubscribeMembers = db.collection('members').onSnapshot(snap => { if (generation === authGeneration) renderMembers(snap.docs,user.uid); });
       unsubscribePending = db.collection('pendingUsers')
         .onSnapshot((snap) => {
+          if (generation !== authGeneration) return;
           const count = snap.docs.length;
           adminBadge.textContent = count;
           adminBadge.classList.toggle('hidden', count === 0);
@@ -3122,8 +3300,19 @@
       .orderBy('createdAt', 'asc')
       .limitToLast(100)
       .onSnapshot((snapshot) => {
+        if (generation !== authGeneration) return;
         renderMessages(snapshot, user);
         notifyForNewMessages(snapshot, user);
       });
+  }
+  auth.onAuthStateChanged(handleAuthState);
+  document.getElementById('verification-resend-btn').addEventListener('click', async () => {
+    try { await auth.currentUser.sendEmailVerification(); document.getElementById('pending-hint').textContent = 'Verification email sent. Open it, then check access.'; }
+    catch { document.getElementById('pending-hint').textContent = 'Could not send verification email. Please try later.'; }
+  });
+  document.getElementById('check-access-btn').addEventListener('click', async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    await user.reload(); await user.getIdToken(true); await handleAuthState(user);
   });
 })();

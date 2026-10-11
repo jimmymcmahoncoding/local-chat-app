@@ -1,34 +1,35 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /voice-messages/{userId}/{fileName} {
-      // Any signed-in user can download voice messages
-      allow read: if request.auth != null;
-      // Only the owner can upload; max 10 MB; must be audio
-      allow write: if request.auth != null
-        && request.auth.uid == userId
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('audio/.*');
-      // Only the owner can delete their own recordings
-      allow delete: if request.auth != null && request.auth.uid == userId;
+    function allowed() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && firestore.get(/databases/(default)/documents/members/$(request.auth.uid)).data.active == true
+        && firestore.get(/databases/(default)/documents/members/$(request.auth.uid)).data.email == request.auth.token.email.lower();
     }
-
-    match /photos/{userId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && request.auth.uid == userId
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
-      allow delete: if request.auth != null && request.auth.uid == userId;
+    function participant(conversationId) {
+      return allowed() && request.auth.uid in firestore.get(/databases/(default)/documents/directMessages/$(conversationId)).data.participants;
     }
-
-    match /avatars/{userId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && request.auth.uid == userId
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
-      allow delete: if request.auth != null && request.auth.uid == userId;
+    function validUpload(uid, maxBytes) {
+      return request.auth.uid == uid && !('validated' in request.resource.metadata) && request.resource.size > 0 && request.resource.size <= maxBytes
+        && request.resource.contentType in ['image/jpeg','image/png','image/webp','audio/webm','audio/webm;codecs=opus','audio/mp4','audio/ogg','audio/ogg;codecs=opus'];
     }
+    match /chat-media/group/{uid}/{fileName} {
+      allow get: if allowed() && resource.metadata.validated == 'true';
+      allow create: if resource == null && allowed() && validUpload(uid, 10 * 1024 * 1024);
+      allow delete: if allowed() && (request.auth.uid == uid || firestore.get(/databases/(default)/documents/members/$(request.auth.uid)).data.isAdmin == true);
+    }
+    match /chat-media/direct/{conversationId}/{uid}/{fileName} {
+      allow get: if participant(conversationId) && resource.metadata.validated == 'true';
+      allow create: if resource == null && participant(conversationId) && validUpload(uid, 10 * 1024 * 1024);
+      allow delete: if participant(conversationId) && request.auth.uid == uid;
+    }
+    match /avatars/{uid}/{fileName} {
+      allow get: if allowed() && resource.metadata.validated == 'true';
+      allow create: if resource == null && allowed() && request.auth.uid == uid && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && !('validated' in request.resource.metadata) && request.resource.contentType in ['image/jpeg','image/png','image/webp'];
+      allow delete: if allowed() && request.auth.uid == uid;
+    }
+    // Listing, replacement, and legacy media paths are denied. Existing legacy
+    // objects must be migrated and their download tokens revoked before rollout.
   }
 }

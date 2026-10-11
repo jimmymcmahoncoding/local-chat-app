@@ -1,44 +1,26 @@
-# local-chat-app
+# KidsChat
 
-A minimal **family-only web chat app** using a free-tier stack:
+A private family chat using Firebase Authentication, Firestore, Cloud Storage and Cloud Functions, with a static frontend hosted on Vercel. Features include group and direct messages, photos, voice, GIFs, polls, reactions, presence, typing and browser push notifications.
 
-- **Firebase Authentication (Google sign-in)** for identity
-- **Firestore** for real-time messaging
-- **Browser Notifications API** for in-app alerts while the chat is open
-- **Firebase Hosting** for free static hosting
+Family access requires a verified Firebase Auth account and an active UID-bound membership. Administrators approve requests or remove access in the Family Access panel. Firestore and Storage rules enforce access independently of the UI.
 
-## Why this fits the requirement
+## Setup and security release
 
-- ✅ Web-based chat application
-- ✅ Restricted to family members via explicit email allowlist
-- ✅ Free-tier friendly notifications while app is open
-- ✅ Runs on Firebase free tier (Spark plan)
+Read [SECURITY-ROLLOUT.md](SECURITY-ROLLOUT.md) before deploying this release. Existing installations require a coordinated membership/media migration. The backend uses Node.js 22 and requires Firebase billing for Functions/Storage; the frontend build emits only public assets into `dist/`.
 
-## Quick setup
+For local development, copy `firebase-config.example.js` to ignored `firebase-config.js`, configure the public web app values, and serve the project over HTTP. Production runs `node build.js` with the required `FIREBASE_*` environment variables plus `APP_CHECK_SITE_KEY`; optional variables are `GIPHY_API_KEY` and `VAPID_PUBLIC_KEY`. The App Check site key must be registered for the actual hosted domain.
 
-1. Create a Firebase project (Spark/free tier).
-2. Enable:
-   - Authentication → Google provider
-   - Firestore Database
-3. Copy `firebase-config.example.js` to `firebase-config.js`.
-4. Fill `firebaseConfig` and `allowedFamilyEmails` in `firebase-config.js`.
-5. Update `firestore.rules` with the same family emails, then deploy rules.
-6. Open `index.html` (or deploy to Firebase Hosting).
+## Verification
 
-## Notification Behavior On Spark
+```sh
+npm ci
+npm --prefix functions ci
+npm run test:security
+npm run test:rules
+```
 
-- Click **Enable push notifications** to grant browser notification permission.
-- While you are signed in and the chat is open, new messages from other family members trigger a browser notification.
-- True background push delivery when the app is closed requires a trusted server sender (for example Cloud Functions on Blaze).
+Rules tests require Firebase CLI and Java 21+ and run solely against `demo-kidschat-security`. Existing Playwright tests target a configured app and may write messages; do not point them at production as part of a security test.
 
-## Files
+Local demo UI testing can set `emulators: true` in the ignored web configuration with `projectId: 'demo-kidschat-security'`. The switch only works on localhost/127.0.0.1; run Auth, Firestore, Storage and Functions on their default emulator ports. Production builds do not emit this switch.
 
-- `index.html` – UI
-- `styles.css` – app styling
-- `app.js` – auth/chat/push logic
-- `firebase-config.example.js` – configuration template
-- `firestore.rules` – server-side Firestore access control
-
-## Security note
-
-Client-side email checks are for UX only. Real access control is enforced by Firestore rules in `firestore.rules`.
+Notification content is private by default. Media uses authenticated downloads rather than reusable public URLs, and logout clears local chat content and blob URLs. See the rollout document for limits and required production checks.

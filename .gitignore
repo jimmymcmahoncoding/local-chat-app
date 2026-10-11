@@ -6,3 +6,10 @@ node_modules
 playwright-report
 test-results
 
+dist/
+security-backup/
+*-debug.log
+functions/.env*
+
+.env*
+!.env.example

@@ -1,0 +1,8 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');
+test('new DM parent is committed before protected messages or typing are subscribed',async()=> {
+ const source=fs.readFileSync('app.js','utf8');const code=source.slice(source.indexOf('  async function openDM('),source.indexOf('  function closeDMPanel(',source.indexOf('  async function openDM(')));
+ let committed=false,created=false;const listeners=[];
+ const ctx={auth:{currentUser:{uid:'alice'}},cachedIsAllowed:true,closeDMPanel:()=>{},getConversationId:()=> 'alice_bob',sendContext:()=>({conversation:'alice_bob'}),dmUnreadCounts:new Map(),updateChatsBadge:()=>{},usersPanelEl:{classList:{add:()=>{}}},updateDMHeader:()=>{},dmPanelEl:{classList:{remove:()=>{}}},dmMessagesEl:{},dmMessageStatus:{},checkSendContext:()=>{},firebase:{firestore:{FieldValue:{serverTimestamp:()=>123}}},db:{collection:()=>({doc:()=>({})}),runTransaction:async handler=>{await handler({get:async()=>({exists:false}),set:()=>{created=true;}});committed=true;}},subscribeDMMessages:()=>{assert(committed&&created);listeners.push('messages');},subscribeDMTyping:()=>{assert(committed&&created);listeners.push('typing');},updateDMVoiceBtnVisibility:()=>{},dmInputEl:{focus:()=>{}}};
+ vm.createContext(ctx);vm.runInContext(code,ctx);await ctx.openDM('bob');assert.deepEqual(listeners,['messages','typing']);
+ committed=false;created=false;listeners.length=0;ctx.db.runTransaction=async()=>{throw new Error('Denied');};await ctx.openDM('bob');assert.deepEqual(listeners,[]);assert.match(ctx.dmMessageStatus.textContent,/Could not open/);
+});
